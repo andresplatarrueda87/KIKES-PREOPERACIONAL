@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Kikes Preoperacional</title>
+  
+  <!-- Manifest & PWA Icons -->
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="app_icon.png">
+  <link rel="icon" type="image/png" href="app_icon.png">
+  
+  <!-- Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <!-- Local Libraries for Offline Resilience -->
+  <script src="lib/dexie.min.js"></script>
+  <script src="lib/pdf-lib.min.js"></script>
+  
+  <!-- Styling -->
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  
+  <!-- Main App Container -->
+  <div class="app-container">
+    
+    <!-- Top Header -->
+    <header class="app-header">
+      <div class="brand">
+        <img src="Kikes_logo.png" alt="Kikes Logo" class="brand-logo">
+        <div class="brand-info">
+          <h1>PREOPERACIONAL</h1>
+          <p>Mantenimiento Motocicletas</p>
+        </div>
+      </div>
+      <div class="pwa-status-badge" id="offline-badge" style="display: none;">OFFLINE</div>
+    </header>
+    
+    <!-- Main Content Panel -->
+    <main class="app-content">
+      
+      <!-- Panel 1: Diligenciar Formulario (Registro Diario) -->
+      <section id="panel-diligenciar" class="view-panel active">
+        
+        <!-- Week and General Metadata Card -->
+        <div class="card meta-card">
+          <div class="form-row">
+            <div class="form-group flex-2">
+              <label for="select-semana">Semana de Registro</label>
+              <div style="display: flex; gap: 8px; align-items: center;">
+                <select id="select-semana" class="form-control" style="flex: 1;">
+                  <!-- Dynamically populated options for weeks -->
+                </select>
+                <input type="week" id="custom-week-picker" class="form-control" style="display: none; width: 150px;">
+              </div>
+            </div>
+            <div class="form-group flex-1">
+              <label for="meta-placa">Placa</label>
+              <input type="text" id="meta-placa" class="form-control uppercase" placeholder="ABC-123" maxlength="7">
+            </div>
+          </div>
+          
+          <div class="form-row">
+            <div class="form-group flex-1">
+              <label for="meta-zona">Tipo de Zona</label>
+              <select id="meta-zona" class="form-control">
+                <option value="Urbana" selected>Urbana</option>
+                <option value="Rural">Rural</option>
+              </select>
+            </div>
+            <div class="form-group flex-2">
+              <label for="meta-area">Área o Proceso</label>
+              <input type="text" id="meta-area" class="form-control" placeholder="Ej. Distribución, Ventas">
+            </div>
+            <div class="form-group flex-1">
+              <label>Nivel Gasolina</label>
+              <div id="meta-fuel-indicator-display" style="background-color: var(--input-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 11px 12px; font-weight: 700; text-align: center; color: var(--accent-color); font-size: 13px; height: 42px; display: flex; align-items: center; justify-content: center;">
+                SÍ (Tiene)
+              </div>
+            </div>
+          </div>
+          
+          <!-- Presets Selector & Auto-fill actions -->
+          <div class="actions-row">
+            <div class="preset-wrapper">
+              <label for="select-preset" class="sr-only">Cargar Perfil</label>
+              <select id="select-preset" class="form-control-sm">
+                <option value="">-- Cargar Perfil Rápido --</option>
+                <!-- Populate presets -->
+              </select>
+            </div>
+            <button id="btn-fill-week" class="btn btn-secondary btn-sm">
+              <span class="btn-icon">⚡</span> Toda la Semana OK
+            </button>
+          </div>
+        </div>
+        
+        <!-- Operator & Signature Card -->
+        <div class="card operator-card">
+          <h3 class="card-title">Datos del Operador de Turno</h3>
+          <div class="form-row">
+            <div class="form-group flex-2">
+              <label for="select-operador-activo">Cargar Operador Preguardado</label>
+              <select id="select-operador-activo" class="form-control">
+                <option value="">-- Cargar Operador --</option>
+                <!-- Populated dynamically -->
+              </select>
+            </div>
+            <div class="form-group flex-3">
+              <label for="input-op-name-activo">Nombre del Operador</label>
+              <input type="text" id="input-op-name-activo" class="form-control" placeholder="Nombre completo del conductor">
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Firma del Operador (Dibuje abajo o cargue una firma preguardada)</label>
+            <div class="signature-pad-wrapper" style="background-color: #ffffff;">
+              <canvas id="active-signature-canvas" width="400" height="150"></canvas>
+              <div class="sig-actions">
+                <button id="btn-clear-active-sig" class="btn btn-secondary btn-sm">Limpiar Firma</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Days Navigation Tab Bar -->
+        <div class="tab-bar-days" id="tab-bar-days">
+          <button class="day-tab active" data-day="0"><span>LUN</span></button>
+          <button class="day-tab" data-day="1"><span>MAR</span></button>
+          <button class="day-tab" data-day="2"><span>MIE</span></button>
+          <button class="day-tab" data-day="3"><span>JUE</span></button>
+          <button class="day-tab" data-day="4"><span>VIE</span></button>
+          <button class="day-tab" data-day="5"><span>SAB</span></button>
+          <button class="day-tab" data-day="6"><span>DOM</span></button>
+        </div>
+        
+        <!-- Active Day Form -->
+        <div class="day-form-container">
+          
+          <!-- Daily stats (Kilometraje & Combustible) -->
+          <div class="card stats-card">
+            <h3 class="card-title" id="day-title-header">Diligenciando Lunes</h3>
+            <div class="form-row">
+              <div class="form-group flex-1">
+                <label for="day-km">Kilometraje ( Contador )</label>
+                <input type="number" id="day-km" class="form-control" placeholder="Km actuales...">
+              </div>
+              <div class="form-group flex-1">
+                <label>Nivel de Combustible</label>
+                <div class="fuel-level-picker" id="fuel-picker-container">
+                  <button type="button" class="fuel-btn" data-fuel="E">E</button>
+                  <button type="button" class="fuel-btn" data-fuel="1/4">1/4</button>
+                  <button type="button" class="fuel-btn" data-fuel="1/2" class="active">1/2</button>
+                  <button type="button" class="fuel-btn" data-fuel="3/4">3/4</button>
+                  <button type="button" class="fuel-btn" data-fuel="F">F</button>
+                  <button type="button" class="fuel-btn" data-fuel="N/A" id="fuel-btn-na" style="display:none;">N/A</button>
+                </div>
+              </div>
+            </div>
+            
+            <div class="actions-row justify-between margin-top-12">
+              <button id="btn-fill-day" class="btn btn-accent btn-sm">
+                <span class="btn-icon">✓</span> Llenar Día como Conforme (C)
+              </button>
+              <div class="copy-prev-km-wrapper" id="copy-prev-km-container" style="display:none;">
+                <button id="btn-copy-km" class="btn btn-text btn-sm">Copiar Km anterior</button>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Checklist groups Accordion/List -->
+          <div class="checklist-container" id="checklist-container">
+            <!-- Populated dynamically via app.js -->
+          </div>
+          
+          <!-- Observaciones for the Day -->
+          <div class="card obs-card">
+            <div class="form-group">
+              <label for="day-observaciones">Observaciones del Día</label>
+              <textarea id="day-observaciones" class="form-control" rows="3" placeholder="Ninguna novedad relevante..."></textarea>
+            </div>
+          </div>
+          
+        </div>
+        
+        <!-- Save week state button floating/fixed at bottom -->
+        <div class="bottom-actions">
+          <button id="btn-save-week" class="btn btn-primary btn-block">
+            <span class="btn-icon">💾</span> Guardar Progreso de la Semana
+          </button>
+        </div>
+        
+      </section>
+      
+      <!-- Panel 2: Histórico de Semanas -->
+      <section id="panel-historico" class="view-panel">
+        <h2 class="view-title">Histórico de Semanas</h2>
+        <div class="search-box">
+          <input type="text" id="search-history" class="form-control" placeholder="Buscar por placa o semana...">
+        </div>
+        
+        <div class="history-list" id="history-list">
+          <!-- Populated dynamically -->
+          <div class="empty-state">
+            <div class="empty-icon">📁</div>
+            <p>No hay semanas registradas aún.</p>
+          </div>
+        </div>
+      </section>
+      
+      <!-- Panel 3: Ajustes / Configuración -->
+      <section id="panel-ajustes" class="view-panel">
+        <h2 class="view-title">Configuración</h2>
+        
+        <!-- Operators Management Profile -->
+        <div class="card settings-card">
+          <h3 class="card-title">Gestión de Operadores (Firmas Preguardadas)</h3>
+          <div id="operators-list" class="presets-list" style="margin-bottom: 12px;">
+            <!-- Populated dynamically -->
+          </div>
+          
+          <hr class="divider">
+          
+          <h4 class="sub-title">Registrar y Guardar Nuevo Operador</h4>
+          <div class="form-group">
+            <label for="settings-op-name">Nombre del Operador</label>
+            <input type="text" id="settings-op-name" class="form-control" placeholder="Ingrese nombre completo">
+          </div>
+          
+          <div class="form-group">
+            <label>Dibujar Firma del Operador</label>
+            <div class="signature-pad-wrapper">
+              <canvas id="signature-canvas" width="400" height="180"></canvas>
+              <div class="sig-actions">
+                <button id="btn-clear-sig" class="btn btn-secondary btn-sm">Limpiar</button>
+                <button id="btn-save-sig" class="btn btn-accent btn-sm">Guardar y Añadir Operador</button>
+              </div>
+            </div>
+            <p class="helper-text">Dibuje la firma, escriba el nombre arriba y guárdelo. Estará disponible para cargarse al registrar.</p>
+          </div>
+        </div>
+        
+        <!-- Vehicle Profiles / Presets -->
+        <div class="card settings-card">
+          <h3 class="card-title">Perfiles de Vehículos</h3>
+          <div id="presets-list" class="presets-list">
+            <!-- Populated dynamically -->
+          </div>
+          
+          <hr class="divider">
+          
+          <h4 class="sub-title">Añadir Nuevo Perfil</h4>
+          <div class="form-row">
+            <div class="form-group flex-1">
+              <label for="preset-placa">Placa</label>
+              <input type="text" id="preset-placa" class="form-control uppercase" placeholder="ABC-123" maxlength="7">
+            </div>
+            <div class="form-group flex-1">
+              <label for="preset-zona">Zona</label>
+              <select id="preset-zona" class="form-control">
+                <option value="Urbana">Urbana</option>
+                <option value="Rural">Rural</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group flex-2">
+              <label for="preset-area">Área o Proceso</label>
+              <input type="text" id="preset-area" class="form-control" placeholder="Ej. Distribución Oriente">
+            </div>
+            <div class="form-group flex-1">
+              <label for="preset-has-fuel">Nivel Gasolina</label>
+              <select id="preset-has-fuel" class="form-control">
+                <option value="1" selected>SÍ (Tiene)</option>
+                <option value="0">NO (N/A)</option>
+              </select>
+            </div>
+          </div>
+          <button id="btn-add-preset" class="btn btn-secondary btn-block">Añadir Perfil</button>
+        </div>
+        
+        <!-- App data manager -->
+        <div class="card settings-card danger-zone">
+          <h3 class="card-title">Datos y Mantenimiento</h3>
+          <p class="helper-text margin-bottom-12">Administre la base de datos local guardada en su dispositivo.</p>
+          <div class="actions-column">
+            <button id="btn-export-db" class="btn btn-secondary btn-sm btn-block">Exportar Base de Datos (JSON)</button>
+            <button id="btn-import-db" class="btn btn-secondary btn-sm btn-block">Importar Base de Datos</button>
+            <input type="file" id="import-db-file" style="display: none;" accept=".json">
+            <button id="btn-clear-db" class="btn btn-danger btn-sm btn-block">Borrar Todo e Inicializar</button>
+          </div>
+        </div>
+      </section>
+      
+    </main>
+    
+    <!-- Navigation Bar (Footer) -->
+    <nav class="app-nav">
+      <button class="nav-btn active" data-target="panel-diligenciar">
+        <span class="nav-icon">📝</span>
+        <span class="nav-text">Registrar</span>
+      </button>
+      <button class="nav-btn" data-target="panel-historico">
+        <span class="nav-icon">📅</span>
+        <span class="nav-text">Histórico</span>
+      </button>
+      <button class="nav-btn" data-target="panel-ajustes">
+        <span class="nav-icon">⚙️</span>
+        <span class="nav-text">Ajustes</span>
+      </button>
+    </nav>
+    
+  </div>
+  
+  <!-- ============================================== -->
+  <!-- HIDDEN PRINT TEMPLATE FOR PDF GENERATION       -->
+  <!-- ============================================== -->
+  <div id="pdf-container" style="display: none;">
+    <div id="pdf-content">
+      <!-- Generated content will be inserted here dynamically by app.js -->
+    </div>
+  </div>
+  
+  <script src="app.js"></script>
+</body>
+</html>
