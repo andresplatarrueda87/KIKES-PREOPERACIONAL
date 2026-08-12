@@ -85,7 +85,8 @@ const STATE = {
   operatorName: '',
   operatorSignature: '',  // Base64 PNG URL
   activeWeekData: null,   // Current weekly checklist data
-  selectedPresetId: ''
+  selectedPresetId: '',
+  signatureLocked: false   // Lock active signature editing when preloaded
 };
 
 // Days helper
@@ -728,6 +729,7 @@ async function setupPresetsHandlers() {
       const activeCanvas = document.getElementById('active-signature-canvas');
       drawSignatureImageOnCanvas(activeCanvas, op.signature);
       
+      lockActiveSignature(true); // Lock editing when preloading signature
       document.getElementById('select-operador-activo').value = ''; // Reset dropdown
     }
   });
@@ -895,6 +897,8 @@ function setupDrawingCanvas(canvas, clearBtn) {
   };
   
   const startDraw = (e) => {
+    // Return early if drawing on active signature canvas is locked
+    if (canvas.id === 'active-signature-canvas' && STATE.signatureLocked) return;
     drawing = true;
     const pos = getMousePos(e);
     ctx.beginPath();
@@ -934,6 +938,29 @@ function drawSignatureImageOnCanvas(canvas, base64Image) {
   };
 }
 
+function lockActiveSignature(lock) {
+  STATE.signatureLocked = lock;
+  const unlockBtn = document.getElementById('btn-unlock-active-sig');
+  const clearBtn = document.getElementById('btn-clear-active-sig');
+  const canvas = document.getElementById('active-signature-canvas');
+  
+  if (lock) {
+    if (unlockBtn) unlockBtn.style.display = 'inline-block';
+    if (clearBtn) clearBtn.style.display = 'none';
+    if (canvas) {
+      canvas.style.opacity = '0.75';
+      canvas.style.cursor = 'not-allowed';
+    }
+  } else {
+    if (unlockBtn) unlockBtn.style.display = 'none';
+    if (clearBtn) clearBtn.style.display = 'inline-block';
+    if (canvas) {
+      canvas.style.opacity = '1.0';
+      canvas.style.cursor = 'crosshair';
+    }
+  }
+}
+
 function setupDrawingPads() {
   const activeCanvas = document.getElementById('active-signature-canvas');
   const activeClearBtn = document.getElementById('btn-clear-active-sig');
@@ -954,6 +981,14 @@ function setupDrawingPads() {
     STATE.operatorSignature = '';
     db.settings.put({ key: 'operator_signature', value: '' });
   });
+
+  // Setup unlock button event listener
+  const activeUnlockBtn = document.getElementById('btn-unlock-active-sig');
+  if (activeUnlockBtn) {
+    activeUnlockBtn.addEventListener('click', () => {
+      lockActiveSignature(false);
+    });
+  }
 }
 
 // --- 11. History List Rendering ---
