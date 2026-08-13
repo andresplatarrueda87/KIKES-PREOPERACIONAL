@@ -804,6 +804,72 @@ function setupFormChangeHandlers() {
     renderActiveDayData();
     showToast("Semana completada con respuestas conforme por defecto", "success", 1800);
   });
+
+  // "Cargar Último" (Copy last registered week from DB history)
+  document.getElementById('btn-copy-last-week').addEventListener('click', async () => {
+    const placa = document.getElementById('meta-placa').value.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+    if (!placa) {
+      showToast("Debe ingresar la placa del vehículo para cargar el último registro", "warning", 2000);
+      return;
+    }
+    
+    // Ensure active week data exists
+    if (!STATE.activeWeekData || STATE.activeWeekData.placa !== placa) {
+      await loadActiveWeekData();
+    }
+    
+    if (!STATE.activeWeekData) {
+      showToast("No se pudo inicializar la semana activa", "error", 2000);
+      return;
+    }
+
+    // Search DB for all weeks saved for this plate
+    let plateWeeks = await db.weeks.where('placa').equals(placa).toArray();
+    
+    // Filter out the current active week
+    plateWeeks = plateWeeks.filter(w => w.weekId !== STATE.currentWeekId);
+    
+    if (plateWeeks.length === 0) {
+      showToast(`No hay semanas guardadas en el historial para la placa ${placa}`, "warning", 2500);
+      return;
+    }
+    
+    // Sort weeks descending by weekId / id so the most recent is first
+    plateWeeks.sort((a, b) => b.weekId.localeCompare(a.weekId));
+    const lastWeek = plateWeeks[0];
+    
+    // Find the last recorded mileage from lastWeek (search Sunday down to Monday)
+    let lastKm = null;
+    for (let i = 6; i >= 0; i--) {
+      if (lastWeek.days && lastWeek.days[i] && lastWeek.days[i].km !== null && !isNaN(lastWeek.days[i].km)) {
+        lastKm = lastWeek.days[i].km;
+        break;
+      }
+    }
+    
+    // Copy checklist answers, fuel levels, and observations from lastWeek to activeWeekData
+    STATE.activeWeekData.days.forEach((day, idx) => {
+      const srcDay = lastWeek.days[idx];
+      if (srcDay) {
+        day.checklist = JSON.parse(JSON.stringify(srcDay.checklist));
+        day.fuel = srcDay.fuel || '1/2';
+        day.observaciones = srcDay.observaciones || '';
+      }
+    });
+    
+    // Set Lunes' mileage to lastKm if found
+    if (lastKm !== null) {
+      STATE.activeWeekData.days[0].km = lastKm;
+    }
+    
+    // Run cascading mileage validation so Monday's mileage propagates forward if needed
+    applyKmCascadeValidation(STATE.activeWeekData);
+    
+    // Render current active day
+    renderActiveDayData();
+    
+    showToast(`Cargados datos de la Semana ${lastWeek.weekId}. Km inicial (Lunes): ${lastKm !== null ? lastKm : 'N/A'}`, "success", 2500);
+  });
   
   // "Guardar Progreso de la Semana"
   document.getElementById('btn-save-week').addEventListener('click', async () => {
@@ -1724,7 +1790,10 @@ function isCanvasBlank(canvas) {
 function registerServiceWorker() {
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('./sw.js')
-      .then(reg => console.log('Service Worker registrado con éxito', reg))
+      .then(reg => {
+        console.log('Service Worker registrado con éxito', reg);
+        reg.update();
+      })
       .catch(err => console.warn('Error al registrar Service Worker', err));
   }
 }

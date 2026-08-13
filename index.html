@@ -23,7 +23,7 @@
   <script src="lib/pdf-lib.min.js"></script>
   
   <!-- Styling -->
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=39">
 </head>
 <body>
   
@@ -50,6 +50,7 @@
         
         <!-- Week and General Metadata Card -->
         <div class="card meta-card">
+          <!-- Fila 1: Semana y Placa -->
           <div class="form-row">
             <div class="form-group flex-2">
               <label for="select-semana">Semana de Registro</label>
@@ -64,6 +65,10 @@
               <label for="meta-placa">Placa</label>
               <input type="text" id="meta-placa" class="form-control uppercase" placeholder="ABC123" maxlength="6">
             </div>
+          </div>
+          
+          <!-- Fila 2: Tipo, Tipo de Zona, Nivel Gasolina -->
+          <div class="form-row">
             <div class="form-group flex-1">
               <label for="meta-tipo">Tipo</label>
               <select id="meta-tipo" class="form-control">
@@ -71,9 +76,6 @@
                 <option value="Motocarga">Motocarga</option>
               </select>
             </div>
-          </div>
-          
-          <div class="form-row">
             <div class="form-group flex-1">
               <label for="meta-zona">Tipo de Zona</label>
               <select id="meta-zona" class="form-control">
@@ -81,16 +83,20 @@
                 <option value="Rural">Rural</option>
               </select>
             </div>
-            <div class="form-group flex-2">
-              <label for="meta-area">Área o Proceso</label>
-              <input type="text" id="meta-area" class="form-control" placeholder="Ej. Distribución, Ventas">
-            </div>
             <div class="form-group flex-1">
               <label for="meta-has-fuel">Nivel Gasolina</label>
               <select id="meta-has-fuel" class="form-control">
                 <option value="1" selected>SÍ (Tiene)</option>
                 <option value="0">NO (N/A)</option>
               </select>
+            </div>
+          </div>
+          
+          <!-- Fila 3: Área o Proceso -->
+          <div class="form-row">
+            <div class="form-group flex-1">
+              <label for="meta-area">Área o Proceso</label>
+              <input type="text" id="meta-area" class="form-control" placeholder="Ej. Distribución, Ventas">
             </div>
           </div>
           
@@ -103,9 +109,14 @@
                 <!-- Populate presets -->
               </select>
             </div>
-            <button id="btn-fill-week" class="btn btn-secondary btn-sm">
-              <span class="btn-icon">⚡</span> Toda la Semana OK
-            </button>
+            <div class="preset-actions-group" style="display: flex; gap: 8px; flex-wrap: wrap;">
+              <button id="btn-fill-week" class="btn btn-secondary btn-sm">
+                <span class="btn-icon">⚡</span> Toda la Semana OK
+              </button>
+              <button id="btn-copy-last-week" class="btn btn-accent btn-sm" style="background-color: #2563eb; color: #ffffff; border: none; font-weight: 600;">
+                <span class="btn-icon">📋</span> Cargar Último
+              </button>
+            </div>
           </div>
         </div>
         
@@ -350,6 +361,6 @@
     </div>
   </div>
   
-  <script src="app.js"></script>
+  <script src="app.js?v=39"></script>
 </body>
 </html>
