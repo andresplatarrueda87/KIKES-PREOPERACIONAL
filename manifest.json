@@ -1,18 +1,32 @@
 {
   "name": "Kikes Preoperacional",
   "short_name": "Preoperacional",
-  "description": "Automatización de registro preoperacional de motocicletas y motocargueros.",
+  "id": "./",
   "start_url": "./index.html",
+  "scope": "./",
   "display": "standalone",
   "background_color": "#121212",
   "theme_color": "#3bae2a",
   "orientation": "any",
+  "description": "Automatización de registro preoperacional de motocicletas y motocargueros.",
   "icons": [
+    {
+      "src": "KIKESPREOPERACIONICO.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "KIKESPREOPERACIONICO.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
     {
       "src": "app_icon.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "maskable"
     }
   ]
 }
