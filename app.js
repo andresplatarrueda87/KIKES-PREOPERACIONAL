@@ -89,6 +89,41 @@ const STATE = {
   signatureLocked: false   // Lock active signature editing when preloaded
 };
 
+// --- Toast Notification System ---
+function showToast(message, type = 'info', duration = 1800) {
+  let container = document.getElementById('toast-container');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'toast-container';
+    container.className = 'toast-container';
+    document.body.appendChild(container);
+  }
+  
+  const toast = document.createElement('div');
+  toast.className = `toast toast-${type}`;
+  
+  const icons = {
+    success: '✓',
+    error: '✕',
+    warning: '⚠️',
+    info: 'ℹ'
+  };
+  const icon = icons[type] || '✓';
+  
+  toast.innerHTML = `
+    <span class="toast-icon">${icon}</span>
+    <span>${message}</span>
+  `;
+  
+  container.appendChild(toast);
+  setTimeout(() => toast.classList.add('show'), 10);
+  
+  setTimeout(() => {
+    toast.classList.remove('show');
+    toast.addEventListener('transitionend', () => toast.remove());
+  }, duration);
+}
+
 // Days helper
 const DAYS_NAMES = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
 
@@ -755,12 +790,22 @@ function setupFormChangeHandlers() {
     });
     
     renderActiveDayData();
-    alert("Semana completada exitosamente con valores conforme. Recuerde guardar su progreso.");
+    showToast("Semana completada con respuestas conforme por defecto", "success", 1800);
   });
   
   // "Guardar Progreso de la Semana"
   document.getElementById('btn-save-week').addEventListener('click', async () => {
-    if (!STATE.activeWeekData) return;
+    const placa = document.getElementById('meta-placa').value.trim();
+    if (!placa) {
+      showToast("Debe ingresar la placa del vehículo para guardar el progreso", "warning", 2000);
+      return;
+    }
+
+    await loadActiveWeekData();
+    if (!STATE.activeWeekData) {
+      showToast("No se pudo inicializar la semana activa", "error", 2000);
+      return;
+    }
     
     saveCurrentActiveDayToState();
     STATE.activeWeekData.tipo = document.getElementById('meta-tipo').value;
@@ -786,10 +831,10 @@ function setupFormChangeHandlers() {
     
     try {
       await db.weeks.put(STATE.activeWeekData);
-      alert("Progreso guardado localmente de forma exitosa.");
+      showToast("Progreso de la semana guardado con éxito", "success", 2000);
     } catch (e) {
       console.error(e);
-      alert("Error al guardar en base de datos local: " + e.message);
+      showToast("Error al guardar en base de datos: " + e.message, "error", 2500);
     }
   });
 
@@ -797,7 +842,7 @@ function setupFormChangeHandlers() {
   document.getElementById('btn-generate-pdf-main').addEventListener('click', async () => {
     const placa = document.getElementById('meta-placa').value.trim();
     if (!placa) {
-      alert("Debe ingresar la placa del vehículo para generar el PDF.");
+      showToast("Debe ingresar la placa del vehículo para generar el PDF", "warning", 1800);
       return;
     }
     await loadActiveWeekData();
@@ -814,7 +859,7 @@ function setupFormChangeHandlers() {
   document.getElementById('btn-send-email-main').addEventListener('click', async () => {
     const placa = document.getElementById('meta-placa').value.trim();
     if (!placa) {
-      alert("Debe ingresar la placa del vehículo para enviar por correo.");
+      showToast("Debe ingresar la placa del vehículo para enviar por correo", "warning", 1800);
       return;
     }
     await loadActiveWeekData();
@@ -836,7 +881,7 @@ async function setupPresetsHandlers() {
     const canvas = document.getElementById('signature-canvas');
     
     if (!name) {
-      alert("Debe ingresar el nombre del operador.");
+      showToast("Debe ingresar el nombre del operador", "warning", 1800);
       return;
     }
     
@@ -847,7 +892,7 @@ async function setupPresetsHandlers() {
     blank.width = canvas.width;
     blank.height = canvas.height;
     if (sigData === blank.toDataURL()) {
-      alert("Debe dibujar la firma del operador.");
+      showToast("Debe dibujar la firma del operador", "warning", 1800);
       return;
     }
     
@@ -857,7 +902,7 @@ async function setupPresetsHandlers() {
     const ctx = canvas.getContext('2d');
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     
-    alert("Operador guardado exitosamente.");
+    showToast("Operador guardado con éxito", "success", 1800);
     renderOperatorsList();
     renderOperatorsDropdown();
   });
@@ -903,7 +948,7 @@ async function setupPresetsHandlers() {
     const hasFuelIndicator = document.getElementById('preset-has-fuel').value === '1';
     
     if (!placa) {
-      alert("Debe ingresar la placa del vehículo.");
+      showToast("Debe ingresar la placa del vehículo", "warning", 1800);
       return;
     }
     
@@ -914,6 +959,7 @@ async function setupPresetsHandlers() {
     document.getElementById('preset-area').value = '';
     document.getElementById('preset-has-fuel').value = '1';
     
+    showToast("Perfil de vehículo guardado con éxito", "success", 1800);
     renderPresetsList();
     renderPresetsDropdown();
   });
@@ -1295,14 +1341,14 @@ function setupDataManagementHandlers() {
           for (const item of data.settings) await db.settings.put(item);
         }
         
-        alert("Restauración completada con éxito.");
+        showToast("Restauración de datos completada con éxito", "success", 2000);
         await loadSettings();
         await renderOperatorsDropdown();
         await renderPresetsDropdown();
         await renderPresetsList();
         await loadActiveWeekData(); // Reload active week inputs and layout
       } catch (err) {
-        alert("Error al importar el archivo. El formato JSON no es válido.");
+        showToast("Error al importar: el formato JSON no es válido", "error", 2500);
       }
     };
     reader.readAsText(file);
@@ -1328,8 +1374,10 @@ function setupDataManagementHandlers() {
       ctx.clearRect(0, 0, activeCanvas.width, activeCanvas.height);
     }
     
-    alert("Base de datos borrada exitosamente.");
-    window.location.reload();
+    showToast("Base de datos borrada exitosamente", "info", 2000);
+    setTimeout(() => {
+      window.location.reload();
+    }, 1200);
   });
 }
 
