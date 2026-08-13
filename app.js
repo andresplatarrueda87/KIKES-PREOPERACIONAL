@@ -116,11 +116,19 @@ function showToast(message, type = 'info', duration = 1800) {
   `;
   
   container.appendChild(toast);
-  setTimeout(() => toast.classList.add('show'), 10);
   
+  requestAnimationFrame(() => {
+    toast.classList.add('show');
+  });
+  
+  // Guaranteed auto-removal using robust setTimeout
   setTimeout(() => {
     toast.classList.remove('show');
-    toast.addEventListener('transitionend', () => toast.remove());
+    setTimeout(() => {
+      if (toast && toast.parentNode) {
+        toast.parentNode.removeChild(toast);
+      }
+    }, 350);
   }, duration);
 }
 
