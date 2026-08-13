@@ -23,7 +23,7 @@
   <script src="lib/pdf-lib.min.js"></script>
   
   <!-- Styling -->
-  <link rel="stylesheet" href="style.css?v=39">
+  <link rel="stylesheet" href="style.css?v=42">
 </head>
 <body>
   
@@ -68,7 +68,7 @@
           </div>
           
           <!-- Fila 2: Tipo, Tipo de Zona, Nivel Gasolina -->
-          <div class="form-row">
+          <div class="form-row meta-card-row-compact">
             <div class="form-group flex-1">
               <label for="meta-tipo">Tipo</label>
               <select id="meta-tipo" class="form-control">
@@ -123,20 +123,25 @@
         <!-- Operator & Signature Card -->
         <div class="card operator-card">
           <h3 class="card-title">Datos del Operador de Turno</h3>
+          <!-- Fila 1: Cargar Operador Preguardado -->
           <div class="form-row">
-            <div class="form-group flex-2">
+            <div class="form-group flex-1">
               <label for="select-operador-activo">Cargar Operador Preguardado</label>
               <select id="select-operador-activo" class="form-control">
                 <option value="">-- Cargar Operador --</option>
                 <!-- Populated dynamically -->
               </select>
             </div>
-            <div class="form-group flex-3">
+          </div>
+          <!-- Fila 2: Nombre del Operador (Fila Aparte) -->
+          <div class="form-row">
+            <div class="form-group flex-1">
               <label for="input-op-name-activo">Nombre del Operador</label>
               <input type="text" id="input-op-name-activo" class="form-control" placeholder="Nombre completo del conductor">
             </div>
           </div>
-          <div class="form-group">
+          <!-- Fila 3: Firma del Operador -->
+          <div class="form-group margin-top-12">
             <label>Firma del Operador (Dibuje abajo o cargue una firma preguardada)</label>
             <div class="signature-pad-wrapper" style="background-color: #ffffff;">
               <canvas id="active-signature-canvas" width="400" height="150"></canvas>
@@ -361,6 +366,6 @@
     </div>
   </div>
   
-  <script src="app.js?v=39"></script>
+  <script src="app.js?v=42"></script>
 </body>
 </html>
