@@ -23,10 +23,10 @@
       "purpose": "any"
     },
     {
-      "src": "app_icon_512.png",
+      "src": "app_icon.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "maskable"
+      "purpose": "any"
     }
   ]
 }
