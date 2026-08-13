@@ -755,6 +755,40 @@ function setupFormChangeHandlers() {
       alert("Error al guardar en base de datos local: " + e.message);
     }
   });
+
+  // "Generar PDF" (Main button)
+  document.getElementById('btn-generate-pdf-main').addEventListener('click', async () => {
+    const placa = document.getElementById('meta-placa').value.trim();
+    if (!placa) {
+      alert("Debe ingresar la placa del vehículo para generar el PDF.");
+      return;
+    }
+    await loadActiveWeekData();
+    saveCurrentActiveDayToState();
+    if (STATE.activeWeekData) {
+      STATE.activeWeekData.tipo = document.getElementById('meta-tipo').value;
+      STATE.activeWeekData.hasFuelIndicator = (document.getElementById('meta-has-fuel').value === '1');
+      await db.weeks.put(STATE.activeWeekData);
+      await generatePdfForWeek(STATE.activeWeekData);
+    }
+  });
+
+  // "Enviar por Correo" (Main button)
+  document.getElementById('btn-send-email-main').addEventListener('click', async () => {
+    const placa = document.getElementById('meta-placa').value.trim();
+    if (!placa) {
+      alert("Debe ingresar la placa del vehículo para enviar por correo.");
+      return;
+    }
+    await loadActiveWeekData();
+    saveCurrentActiveDayToState();
+    if (STATE.activeWeekData) {
+      STATE.activeWeekData.tipo = document.getElementById('meta-tipo').value;
+      STATE.activeWeekData.hasFuelIndicator = (document.getElementById('meta-has-fuel').value === '1');
+      await db.weeks.put(STATE.activeWeekData);
+      await sendWeekByEmail(STATE.activeWeekData);
+    }
+  });
 }
 
 // --- 9. Presets & Default Configuration Management ---
@@ -1130,6 +1164,7 @@ async function renderHistoryList() {
       <div class="history-actions">
         <button class="btn btn-secondary btn-sm btn-edit-hist" data-id="${week.id}">Editar</button>
         <button class="btn btn-accent btn-sm btn-pdf-hist" data-id="${week.id}">Generar PDF</button>
+        <button class="btn btn-sm btn-email-hist" data-id="${week.id}" style="background-color: #ea4335; color: #ffffff; border: none; font-weight: 500;">✉️ Correo</button>
         <button class="btn btn-danger btn-sm btn-delete-hist" data-id="${week.id}">Eliminar</button>
       </div>
     `;
@@ -1152,6 +1187,10 @@ async function renderHistoryList() {
     
     card.querySelector('.btn-pdf-hist').addEventListener('click', () => {
       generatePdfForWeek(week);
+    });
+    
+    card.querySelector('.btn-email-hist').addEventListener('click', () => {
+      sendWeekByEmail(week);
     });
     
     card.querySelector('.btn-delete-hist').addEventListener('click', async () => {
@@ -1276,7 +1315,7 @@ function wrapText(text, font, fontSize, maxWidth) {
   return lines;
 }
 
-async function generatePdfForWeek(weekData) {
+async function generatePdfBytesForWeek(weekData) {
   try {
     // 1. Fetch the original template PDF
     const response = await fetch('./GMA-F-10 PREOPERACIONAL MOTOCICLETAS.docx.pdf');
@@ -1297,38 +1336,29 @@ async function generatePdfForWeek(weekData) {
     const dates = getWeekDates(weekData.weekId);
     
     // --- Page 1 Metadata ---
-    // Periodo Desde
     page1.drawText(formatDateShort(dates[0]), { x: 135, y: 691, size: 7.5, font: helveticaFont });
-    // Periodo Hasta
     page1.drawText(formatDateShort(dates[6]), { x: 232, y: 691, size: 7.5, font: helveticaFont });
     
-    // Days numbers in small headers (lowered slightly to Y=686.5 to center in the small boxes)
     for (let d = 0; d < 7; d++) {
       const dayNum = String(dates[d].getDate()).padStart(2, '0');
       page1.drawText(dayNum, { x: 312 + d * 40.5, y: 686.5, size: 7.5, font: helveticaFont });
     }
     
-    // Zona
     if (weekData.zona === 'Rural') {
       page1.drawText('X', { x: 205.5, y: 677.5, size: 8, font: helveticaBold });
     } else {
       page1.drawText('X', { x: 260.5, y: 677.5, size: 8, font: helveticaBold });
     }
     
-    // Área o Proceso
     if (weekData.area) {
       page1.drawText(weekData.area, { x: 415, y: 669, size: 7.5, font: helveticaFont });
     }
     
-    // Placa
     page1.drawText(weekData.placa.toUpperCase(), { x: 50, y: 633, size: 10, font: helveticaBold });
     
-    // Kilometraje X centers (shifted left for Lunes to Jueves for clean centering)
     const kmCenters = [316.0, 356.5, 397.0, 437.5, 478.0, 516.5, 554.5];
-    // Combustible X centers
     const fuelCenters = [320.0, 360.5, 401.0, 441.5, 482.0, 518.0, 556.5];
     
-    // Kilometraje (daily)
     for (let d = 0; d < 7; d++) {
       const km = weekData.days[d].km;
       if (km !== null) {
@@ -1339,7 +1369,6 @@ async function generatePdfForWeek(weekData) {
       }
     }
     
-    // Combustible (daily)
     const weekHasFuel = (weekData.hasFuelIndicator !== false);
     for (let d = 0; d < 7; d++) {
       const fuel = weekHasFuel ? (weekData.days[d].fuel || '1/2') : 'N/A';
@@ -1353,7 +1382,6 @@ async function generatePdfForWeek(weekData) {
     
     // --- Page 1 Checklist Items ---
     let globalRowIdx = 0;
-    // Explicit Y coordinates for bottom table to handle wrap heights cleanly (first row is taller)
     const conductorY = [192.5, 178.0, 165.5, 153.0];
     
     for (let g = 0; g < CHECKLIST_STRUCTURE.length; g++) {
@@ -1374,7 +1402,6 @@ async function generatePdfForWeek(weekData) {
                 drawY = 568.5 - globalRowIdx * 11.765;
                 drawX = (val === 'C') ? (304.5 + d * 40.5) : (321.5 + d * 40.5);
               } else {
-                // Bottom table (CONDICIONES DEL CONDUCTOR) - explicitly mapped Y
                 const conductorRowIdx = globalRowIdx - 30;
                 drawY = conductorY[conductorRowIdx];
                 drawX = (val === 'C') ? (320.0 + d * 40.3) : (338.0 + d * 40.3);
@@ -1408,7 +1435,7 @@ async function generatePdfForWeek(weekData) {
     
     // --- Page 2: Simplified Borderless Observations List with Multi-line Wrapping & Dates ---
     let currentY = 725;
-    const maxWidth = 440; // X=105 to X=545
+    const maxWidth = 440;
     const fontSize = 7.5;
     const dayFontSize = 6.5;
     const dateFontSize = 6.0;
@@ -1420,9 +1447,7 @@ async function generatePdfForWeek(weekData) {
       const dayLabel = DISPLAY_DAYS_NAMES[idx];
       const dayDateStr = formatDateShort(dates[idx]);
       
-      // Draw Day Name (e.g. LUNES, MIERCOL.)
       page2.drawText(dayLabel, { x: 35, y: currentY, size: dayFontSize, font: helveticaBold });
-      // Draw Date underneath in dd/mm/yyyy format
       page2.drawText(dayDateStr, { x: 35, y: currentY - 8.0, size: dateFontSize, font: helveticaFont });
       
       const obsText = day.observaciones || 'Sin observaciones';
@@ -1449,21 +1474,18 @@ async function generatePdfForWeek(weekData) {
       embeddedSig = await pdfDoc.embedPng(activeSigData);
     }
     
-    // Explicit uneven centers and widths of daily columns in signatures table
     const sigCenters = [136.6, 207.8, 279.1, 350.3, 418.9, 481.2, 539.9];
     const cellWidths = [62, 62, 62, 62, 56, 48, 48];
     
     for (let d = 0; d < 7; d++) {
       const day = weekData.days[d];
       if (day.km !== null) {
-        // Date text (centered inside the specific column, scaled down for SAB/DOM)
         const dateStr = formatDateShort(new Date(day.date));
         const dateSize = (d >= 5) ? 6.0 : 7.0;
         const dateWidth = helveticaFont.widthOfTextAtSize(dateStr, dateSize);
         const dateX = sigCenters[d] - (dateWidth / 2);
         page2.drawText(dateStr, { x: dateX, y: 255.5, size: dateSize, font: helveticaFont });
         
-        // Operator Name text: if 1-2 words, centered; if 3-4 words (2 names and/or 2 surnames), split into up to 4 lines
         if (activeOpName) {
           const maxW = cellWidths[d] - 2;
           const words = activeOpName.split(/\s+/).filter(Boolean);
@@ -1479,7 +1501,6 @@ async function generatePdfForWeek(weekData) {
               nameLines = words;
             }
           } else {
-            // 3 or 4 words (e.g. 2 names + 2 surnames) -> split into separate lines
             nameSize = (d >= 5) ? 5.0 : 5.8;
             const line4 = words.slice(3).join(' ');
             nameLines = [words[0], words[1], words[2], line4].filter(Boolean);
@@ -1497,10 +1518,9 @@ async function generatePdfForWeek(weekData) {
           });
         }
         
-        // Draw Signature image scaled down and centered inside SAB/DOM (44pt width)
         if (embeddedSig) {
           const sigW = (d >= 5) ? 44 : 54;
-          const sigH = sigW * 0.48; // keep aspect ratio
+          const sigH = sigW * 0.48;
           const sigX = sigCenters[d] - (sigW / 2);
           page2.drawImage(embeddedSig, {
             x: sigX,
@@ -1512,19 +1532,65 @@ async function generatePdfForWeek(weekData) {
       }
     }
     
-    // 3. Save modified bytes and download
-    const pdfBytes = await pdfDoc.save();
-    const blob = new Blob([pdfBytes], { type: 'application/pdf' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `Preoperacional_${weekData.placa.toUpperCase()}_Semana_${weekData.weekId}.pdf`;
-    a.click();
-    URL.revokeObjectURL(url);
-    
+    return await pdfDoc.save();
   } catch (err) {
     console.error(err);
-    alert("Error al generar el PDF: " + err.message);
+    alert("Error al procesar el PDF: " + err.message);
+    return null;
+  }
+}
+
+async function generatePdfForWeek(weekData) {
+  const pdfBytes = await generatePdfBytesForWeek(weekData);
+  if (!pdfBytes) return;
+  
+  const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `Preoperacional_${weekData.placa.toUpperCase()}_Semana_${weekData.weekId}.pdf`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+async function sendWeekByEmail(weekData) {
+  try {
+    const pdfBytes = await generatePdfBytesForWeek(weekData);
+    if (!pdfBytes) return;
+
+    const fileName = `Preoperacional_${weekData.placa.toUpperCase()}_Semana_${weekData.weekId}.pdf`;
+    const pdfBlob = new Blob([pdfBytes], { type: 'application/pdf' });
+    const pdfFile = new File([pdfBlob], fileName, { type: 'application/pdf' });
+
+    const subject = `Preoperacional Semana ${weekData.weekId} - Placa ${weekData.placa.toUpperCase()}`;
+    const bodyText = `Cordial saludo,\n\nAdjunto el registro preoperacional de la semana ${weekData.weekId} del vehículo con placa ${weekData.placa.toUpperCase()} (Área: ${weekData.area || 'General'}, Zona: ${weekData.zona}).\n\nAtentamente,\n${STATE.operatorName || 'Operador'}`;
+
+    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+    if (isMobile && navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
+      await navigator.share({
+        title: subject,
+        text: bodyText,
+        files: [pdfFile]
+      });
+      return;
+    }
+
+    // On PC: Download PDF and open Gmail web composer directly in new tab
+    const url = URL.createObjectURL(pdfBlob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    a.click();
+    URL.revokeObjectURL(url);
+
+    const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&tf=1&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(bodyText + '\n\n(Nota: El archivo PDF ha sido descargado a tu computador. Selecciónalo al presionar el icono de clip "Adjuntar archivos" en Gmail).')}`;
+    window.open(gmailUrl, '_blank');
+  } catch (err) {
+    if (err.name !== 'AbortError') {
+      console.error(err);
+      alert("Error al enviar el correo: " + err.message);
+    }
   }
 }
 
