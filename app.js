@@ -68,14 +68,182 @@ const CHECKLIST_STRUCTURE = [
 // Flat items list for easier referencing
 const ALL_ITEMS = CHECKLIST_STRUCTURE.flatMap(g => g.items);
 
-// --- 2. Database Initialization (Dexie.js) ---
-const db = new Dexie('kikes_preop_db');
-db.version(2).stores({
-  weeks: 'id, dateStart, dateEnd, placa, finishedDaysCount',
-  presets: '++id, placa, zona, area',
-  operators: '++id, name',
-  settings: 'key, value'
-});
+// --- 2. Database Adapter with Dexie + LocalStorage Hybrid Resilience ---
+let dexieDb = null;
+try {
+  dexieDb = new Dexie('kikes_preop_v3_db');
+  dexieDb.version(1).stores({
+    weeks: 'id, dateStart, dateEnd, placa, finishedDaysCount',
+    presets: '++id, placa, zona, area',
+    operators: '++id, name',
+    settings: 'key, value'
+  });
+} catch (e) {
+  console.warn("Dexie instance error, using local storage adapter:", e);
+}
+
+class StorageTable {
+  constructor(name, keyPath = 'id', isAutoInc = false) {
+    this.name = name;
+    this.keyPath = keyPath;
+    this.isAutoInc = isAutoInc;
+  }
+
+  _readLocal() {
+    try {
+      const raw = localStorage.getItem(`kikes_preop_${this.name}`);
+      return raw ? JSON.parse(raw) : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  _writeLocal(list) {
+    try {
+      localStorage.setItem(`kikes_preop_${this.name}`, JSON.stringify(list));
+    } catch (e) {
+      console.warn("LocalStorage write warning:", e);
+    }
+  }
+
+  async toArray() {
+    if (dexieDb) {
+      try {
+        const data = await dexieDb[this.name].toArray();
+        if (data && data.length > 0) {
+          this._writeLocal(data);
+          return data;
+        }
+      } catch (e) {
+        console.warn(`Dexie ${this.name}.toArray fallback to localStorage:`, e);
+      }
+    }
+    return this._readLocal();
+  }
+
+  async get(key) {
+    if (dexieDb) {
+      try {
+        const item = await dexieDb[this.name].get(key);
+        if (item) return item;
+      } catch (e) {
+        console.warn(`Dexie ${this.name}.get fallback to localStorage:`, e);
+      }
+    }
+    const list = this._readLocal();
+    return list.find(item => item[this.keyPath] === key) || null;
+  }
+
+  async add(item) {
+    const newItem = { ...item };
+    if (this.isAutoInc && !newItem[this.keyPath]) {
+      newItem[this.keyPath] = Date.now() + Math.floor(Math.random() * 1000);
+    }
+    if (dexieDb) {
+      try {
+        const id = await dexieDb[this.name].add(item);
+        if (id) newItem[this.keyPath] = id;
+      } catch (e) {
+        console.warn(`Dexie ${this.name}.add fallback to localStorage:`, e);
+      }
+    }
+    const list = this._readLocal();
+    list.push(newItem);
+    this._writeLocal(list);
+    return newItem[this.keyPath];
+  }
+
+  async put(item) {
+    const newItem = { ...item };
+    if (this.isAutoInc && !newItem[this.keyPath]) {
+      newItem[this.keyPath] = Date.now() + Math.floor(Math.random() * 1000);
+    }
+    if (dexieDb) {
+      try {
+        await dexieDb[this.name].put(item);
+      } catch (e) {
+        console.warn(`Dexie ${this.name}.put fallback to localStorage:`, e);
+      }
+    }
+    const list = this._readLocal();
+    const idx = list.findIndex(i => i[this.keyPath] === newItem[this.keyPath]);
+    if (idx >= 0) {
+      list[idx] = newItem;
+    } else {
+      list.push(newItem);
+    }
+    this._writeLocal(list);
+    return newItem[this.keyPath];
+  }
+
+  async delete(key) {
+    if (dexieDb) {
+      try {
+        await dexieDb[this.name].delete(key);
+      } catch (e) {
+        console.warn(`Dexie ${this.name}.delete fallback to localStorage:`, e);
+      }
+    }
+    let list = this._readLocal();
+    list = list.filter(i => i[this.keyPath] !== key);
+    this._writeLocal(list);
+  }
+
+  async clear() {
+    if (dexieDb) {
+      try {
+        await dexieDb[this.name].clear();
+      } catch (e) {}
+    }
+    this._writeLocal([]);
+  }
+
+  where(field) {
+    const self = this;
+    return {
+      equals(val) {
+        return {
+          async toArray() {
+            const list = await self.toArray();
+            return list.filter(item => String(item[field] || '').toUpperCase() === String(val || '').toUpperCase());
+          },
+          async first() {
+            const list = await self.toArray();
+            return list.find(item => String(item[field] || '').toUpperCase() === String(val || '').toUpperCase()) || null;
+          }
+        };
+      },
+      equalsIgnoreCase(val) {
+        return this.equals(val);
+      }
+    };
+  }
+}
+
+const db = {
+  weeks: new StorageTable('weeks', 'id', false),
+  presets: new StorageTable('presets', 'id', true),
+  operators: new StorageTable('operators', 'id', true),
+  settings: new StorageTable('settings', 'key', false),
+  async open() {
+    if (dexieDb) {
+      try {
+        await dexieDb.open();
+      } catch (e) {
+        console.warn("Dexie open failed, falling back to local storage engine:", e);
+      }
+    }
+  },
+  async clearAll() {
+    await this.weeks.clear();
+    await this.presets.clear();
+    await this.operators.clear();
+    await this.settings.clear();
+    if (dexieDb) {
+      try { await dexieDb.delete(); } catch(e) {}
+    }
+  }
+};
 
 // --- 3. App State ---
 const STATE = {
@@ -145,22 +313,31 @@ document.addEventListener('DOMContentLoaded', async () => {
   window.addEventListener('online', updateOnlineStatus);
   window.addEventListener('offline', updateOnlineStatus);
 
-  // C. Load configurations
-  await loadSettings();
-  await renderOperatorsDropdown();
-  
-  // D. Populate Weeks Dropdown
-  generateWeeksDropdown();
-  
-  // E. Setup UI Event Listeners
+  // C. Setup UI Event Listeners IMMEDIATELY so buttons and navigation work right away
   setupNavigation();
   setupFormChangeHandlers();
   setupPresetsHandlers();
   setupDrawingPads();
   setupDataManagementHandlers();
   
-  // F. Load Active Week Data
-  await loadActiveWeekData();
+  // D. Populate Weeks Dropdown
+  generateWeeksDropdown();
+
+  // E. Database Initialization with auto-recovery
+  try {
+    await db.open();
+  } catch (err) {
+    console.warn("Database initialization notice:", err);
+  }
+  
+  // F. Load configurations & active week data
+  try {
+    await loadSettings();
+    await renderOperatorsDropdown();
+    await loadActiveWeekData();
+  } catch (dataErr) {
+    console.error("Error loading initial data:", dataErr);
+  }
 });
 
 // --- 5. Navigation & View Toggles ---
@@ -169,22 +346,47 @@ function setupNavigation() {
   const panels = document.querySelectorAll('.view-panel');
   
   navButtons.forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
       const targetPanelId = btn.getAttribute('data-target');
+      if (!targetPanelId) return;
+      
+      // Auto-save day data if leaving registration view
+      const dilgPanel = document.getElementById('panel-diligenciar');
+      if (dilgPanel && dilgPanel.classList.contains('active')) {
+        try {
+          saveCurrentActiveDayToState();
+        } catch (err) {
+          console.warn("Auto-save day warning on nav:", err);
+        }
+      }
       
       navButtons.forEach(b => b.classList.remove('active'));
-      panels.forEach(p => p.classList.remove('active'));
+      panels.forEach(p => {
+        p.classList.remove('active');
+        p.style.display = 'none';
+      });
       
       btn.classList.add('active');
       const targetPanel = document.getElementById(targetPanelId);
-      targetPanel.classList.add('active');
+      if (targetPanel) {
+        targetPanel.classList.add('active');
+        targetPanel.style.display = 'flex';
+      }
+      
+      // Scroll to top of the screen
+      window.scrollTo(0, 0);
       
       // Load view specific data
-      if (targetPanelId === 'panel-historico') {
-        renderHistoryList();
-      } else if (targetPanelId === 'panel-ajustes') {
-        renderPresetsList();
-        renderOperatorsList();
+      try {
+        if (targetPanelId === 'panel-historico') {
+          renderHistoryList();
+        } else if (targetPanelId === 'panel-ajustes') {
+          renderPresetsList();
+          renderOperatorsList();
+        }
+      } catch (err) {
+        console.error("Error loading panel view data:", err);
       }
     });
   });
@@ -314,7 +516,7 @@ async function loadSettings() {
   }
 }
 
-function initNewWeekData(weekId, placa, zona, area, tipo, hasFuelIndicator) {
+function initNewWeekData(weekId, placa, zona, area, tipo, hasFuelIndicator, kmPromedio = 0) {
   const dates = getWeekDates(weekId);
   const defaultFuel = (hasFuelIndicator === false) ? 'N/A' : '1/2';
   const weekData = {
@@ -327,6 +529,7 @@ function initNewWeekData(weekId, placa, zona, area, tipo, hasFuelIndicator) {
     area: area,
     tipo: tipo || 'Moto',
     hasFuelIndicator: hasFuelIndicator !== false,
+    kmPromedio: kmPromedio || 0,
     updatedAt: new Date().toISOString(),
     days: []
   };
@@ -402,7 +605,7 @@ async function loadActiveWeekData() {
   document.querySelector('.day-form-container').style.opacity = '1';
   document.querySelector('.day-form-container').style.pointerEvents = 'auto';
   
-  // Check preset and last record for fuel indicator priority
+  // Check preset and last record for fuel indicator and kmPromedio priority
   const preset = await db.presets.where('placa').equalsIgnoreCase(placa).first();
   const lastActiveRecord = await db.weeks.where('placa').equals(placa).first();
   
@@ -413,6 +616,13 @@ async function loadActiveWeekData() {
     hasFuel = lastActiveRecord.hasFuelIndicator;
   }
   
+  let kmPromedio = 0;
+  if (preset && preset.kmPromedio) {
+    kmPromedio = parseFloat(preset.kmPromedio) || 0;
+  } else if (lastActiveRecord && lastActiveRecord.kmPromedio) {
+    kmPromedio = parseFloat(lastActiveRecord.kmPromedio) || 0;
+  }
+  
   const searchId = `${weekId}-${placa}`;
   let weekData = await db.weeks.get(searchId);
   
@@ -420,14 +630,19 @@ async function loadActiveWeekData() {
     const finalArea = area || (lastActiveRecord ? lastActiveRecord.area : (preset ? preset.area : ''));
     const finalZona = lastActiveRecord ? lastActiveRecord.zona : (preset ? preset.zona : zona);
     const finalTipo = lastActiveRecord ? (lastActiveRecord.tipo || 'Moto') : (preset ? (preset.tipo || 'Moto') : tipo);
+    const finalKmProm = (kmPromedio > 0) ? kmPromedio : (document.getElementById('meta-km-promedio') ? (parseFloat(document.getElementById('meta-km-promedio').value) || 0) : 0);
     
     document.getElementById('meta-area').value = finalArea;
     document.getElementById('meta-zona').value = finalZona;
     document.getElementById('meta-tipo').value = finalTipo;
     document.getElementById('meta-has-fuel').value = hasFuel ? '1' : '0';
+    if (document.getElementById('meta-km-promedio')) {
+      document.getElementById('meta-km-promedio').value = finalKmProm > 0 ? finalKmProm : '';
+    }
     STATE.hasFuelIndicator = hasFuel;
+    STATE.kmPromedio = finalKmProm;
     
-    weekData = initNewWeekData(weekId, placa, finalZona, finalArea, finalTipo, hasFuel);
+    weekData = initNewWeekData(weekId, placa, finalZona, finalArea, finalTipo, hasFuel, finalKmProm);
   } else {
     // If weekData exists, preset configuration still overrides if available
     if (preset && typeof preset.hasFuelIndicator === 'boolean') {
@@ -436,12 +651,23 @@ async function loadActiveWeekData() {
       hasFuel = weekData.hasFuelIndicator;
     }
     
+    if (preset && preset.kmPromedio) {
+      kmPromedio = parseFloat(preset.kmPromedio) || 0;
+    } else if (typeof weekData.kmPromedio === 'number' && weekData.kmPromedio > 0) {
+      kmPromedio = weekData.kmPromedio;
+    }
+    
     document.getElementById('meta-zona').value = weekData.zona;
     document.getElementById('meta-area').value = weekData.area;
     document.getElementById('meta-tipo').value = weekData.tipo || 'Moto';
     document.getElementById('meta-has-fuel').value = hasFuel ? '1' : '0';
+    if (document.getElementById('meta-km-promedio')) {
+      document.getElementById('meta-km-promedio').value = kmPromedio > 0 ? kmPromedio : (weekData.kmPromedio || '');
+    }
     STATE.hasFuelIndicator = hasFuel;
+    STATE.kmPromedio = kmPromedio;
     weekData.hasFuelIndicator = hasFuel;
+    weekData.kmPromedio = kmPromedio;
   }
   
   // Force fuel = 'N/A' across all 7 days if vehicle has no fuel indicator
@@ -450,13 +676,34 @@ async function loadActiveWeekData() {
   }
   
   STATE.activeWeekData = weekData;
+  applyKmCascade(STATE.activeWeekData, 0);
   renderActiveDayData();
   updatePrevKmButtonContainer();
 }
 
-function applyKmCascadeValidation(weekData) {
+function applyKmCascade(weekData, fromDayIndex = 0) {
   if (!weekData || !weekData.days) return;
   
+  const metaKmEl = document.getElementById('meta-km-promedio');
+  const kmPromedio = parseFloat(weekData.kmPromedio || (metaKmEl ? metaKmEl.value : 0) || 0);
+  
+  // 1. If kmPromedio is set (> 0), cascade to subsequent empty or auto-cascaded days
+  if (kmPromedio > 0) {
+    for (let i = Math.max(0, fromDayIndex); i < 6; i++) {
+      const currentDay = weekData.days[i];
+      const nextDay = weekData.days[i + 1];
+      
+      if (currentDay && currentDay.km !== null && !isNaN(currentDay.km) && currentDay.km > 0) {
+        // If next day is empty OR was previously calculated by cascade, update it
+        if (nextDay.km === null || isNaN(nextDay.km) || nextDay.isAutoCascaded) {
+          nextDay.km = Math.round((currentDay.km + kmPromedio) * 10) / 10;
+          nextDay.isAutoCascaded = true;
+        }
+      }
+    }
+  }
+
+  // 2. Minimum validation: ensure day[i+1].km >= day[i].km
   let currentMinKm = null;
   for (let i = 0; i < 7; i++) {
     const day = weekData.days[i];
@@ -477,10 +724,21 @@ function saveCurrentActiveDayToState() {
   
   // Save Kilometraje
   const kmInput = document.getElementById('day-km').value;
-  dayData.km = kmInput ? parseFloat(kmInput) : null;
+  const newKm = kmInput ? parseFloat(kmInput) : null;
   
-  // Apply cascading mileage validation for subsequent days
-  applyKmCascadeValidation(STATE.activeWeekData);
+  if (newKm !== dayData.km) {
+    dayData.isAutoCascaded = false; // User manually set this value
+  }
+  dayData.km = newKm;
+  
+  // Save kmPromedio from metadata
+  const metaKmEl = document.getElementById('meta-km-promedio');
+  if (metaKmEl && metaKmEl.value !== '') {
+    STATE.activeWeekData.kmPromedio = parseFloat(metaKmEl.value) || 0;
+  }
+  
+  // Apply cascading mileage to subsequent days
+  applyKmCascade(STATE.activeWeekData, STATE.activeDayIndex);
   
   // Save Fuel Level
   const activeFuelBtn = document.querySelector('.fuel-btn.active');
@@ -707,6 +965,18 @@ function setupFormChangeHandlers() {
   document.getElementById('meta-area').addEventListener('input', () => {
     if (STATE.activeWeekData) STATE.activeWeekData.area = document.getElementById('meta-area').value.trim();
   });
+  const metaKmPromInput = document.getElementById('meta-km-promedio');
+  if (metaKmPromInput) {
+    metaKmPromInput.addEventListener('input', () => {
+      const val = parseFloat(metaKmPromInput.value) || 0;
+      STATE.kmPromedio = val;
+      if (STATE.activeWeekData) {
+        STATE.activeWeekData.kmPromedio = val;
+        applyKmCascade(STATE.activeWeekData, 0);
+        renderActiveDayData();
+      }
+    });
+  }
   
   // Fuel Picker Selection
   document.querySelector('.fuel-level-picker').addEventListener('click', (e) => {
@@ -723,7 +993,8 @@ function setupFormChangeHandlers() {
     if (prevKm) {
       document.getElementById('day-km').value = prevKm;
       STATE.activeWeekData.days[STATE.activeDayIndex].km = parseFloat(prevKm);
-      applyKmCascadeValidation(STATE.activeWeekData);
+      STATE.activeWeekData.days[STATE.activeDayIndex].isAutoCascaded = false;
+      applyKmCascade(STATE.activeWeekData, STATE.activeDayIndex);
     }
   });
 
@@ -780,6 +1051,10 @@ function setupFormChangeHandlers() {
       baseKm = prevKm ? parseFloat(prevKm) : 10000;
     }
     
+    const kmIncrement = (STATE.activeWeekData.kmPromedio && STATE.activeWeekData.kmPromedio > 0)
+      ? STATE.activeWeekData.kmPromedio
+      : 20;
+    
     STATE.activeWeekData.days.forEach((dayData, idx) => {
       // 1. Checklist
       ALL_ITEMS.forEach(item => {
@@ -795,9 +1070,10 @@ function setupFormChangeHandlers() {
       } else if (!dayData.fuel || dayData.fuel === 'N/A') {
         dayData.fuel = '1/2';
       }
-      // 3. Estimate Km (increase by 15-30km daily)
+      // 3. Estimate Km (increase by kmIncrement daily)
       if (dayData.km === null) {
-        dayData.km = baseKm + (idx * 20);
+        dayData.km = baseKm + (idx * kmIncrement);
+        dayData.isAutoCascaded = true;
       }
     });
     
@@ -860,10 +1136,18 @@ function setupFormChangeHandlers() {
     // Set Lunes' mileage to lastKm if found
     if (lastKm !== null) {
       STATE.activeWeekData.days[0].km = lastKm;
+      STATE.activeWeekData.days[0].isAutoCascaded = false;
+    }
+    
+    if (lastWeek.kmPromedio) {
+      STATE.activeWeekData.kmPromedio = lastWeek.kmPromedio;
+      if (document.getElementById('meta-km-promedio')) {
+        document.getElementById('meta-km-promedio').value = lastWeek.kmPromedio;
+      }
     }
     
     // Run cascading mileage validation so Monday's mileage propagates forward if needed
-    applyKmCascadeValidation(STATE.activeWeekData);
+    applyKmCascade(STATE.activeWeekData, 0);
     
     // Render current active day
     renderActiveDayData();
@@ -896,6 +1180,8 @@ function setupFormChangeHandlers() {
     STATE.activeWeekData.area = document.getElementById('meta-area').value.trim();
     STATE.activeWeekData.tipo = document.getElementById('meta-tipo').value;
     STATE.activeWeekData.hasFuelIndicator = (document.getElementById('meta-has-fuel').value === '1');
+    const kmPromVal = document.getElementById('meta-km-promedio') ? (parseFloat(document.getElementById('meta-km-promedio').value) || 0) : 0;
+    STATE.activeWeekData.kmPromedio = kmPromVal;
     
     const isMoto = STATE.activeWeekData.tipo === 'Moto';
     const applicableItems = ALL_ITEMS.filter(item => !(item.onlyMotocarga && isMoto));
@@ -965,59 +1251,77 @@ function setupFormChangeHandlers() {
   });
 }
 
+function isCanvasBlank(canvas) {
+  if (!canvas) return true;
+  const ctx = canvas.getContext('2d');
+  const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const data = imgData.data;
+  for (let i = 0; i < data.length; i += 4) {
+    if (data[i + 3] > 0) {
+      return false; // Found a non-transparent pixel
+    }
+  }
+  return true;
+}
+
 // --- 9. Presets & Default Configuration Management ---
 async function setupPresetsHandlers() {
   // Add operator button from Settings
   document.getElementById('btn-save-sig').addEventListener('click', async () => {
-    const name = document.getElementById('settings-op-name').value.trim();
-    const canvas = document.getElementById('signature-canvas');
-    
-    if (!name) {
-      showToast("Debe ingresar el nombre del operador", "warning", 1800);
-      return;
+    try {
+      const name = document.getElementById('settings-op-name').value.trim();
+      const canvas = document.getElementById('signature-canvas');
+      
+      if (!name) {
+        showToast("Debe ingresar el nombre del operador", "warning", 1800);
+        return;
+      }
+      
+      if (isCanvasBlank(canvas)) {
+        showToast("Debe dibujar la firma del operador", "warning", 1800);
+        return;
+      }
+      
+      const sigData = canvas.toDataURL('image/png');
+      
+      await db.operators.add({ name, signature: sigData });
+      
+      document.getElementById('settings-op-name').value = '';
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      
+      showToast("Operador guardado con éxito", "success", 1800);
+      await renderOperatorsList();
+      await renderOperatorsDropdown();
+    } catch (err) {
+      console.error("Error al guardar operador:", err);
+      showToast("Error al guardar operador: " + err.message, "error", 2500);
     }
-    
-    const sigData = canvas.toDataURL('image/png');
-    
-    // Check if canvas signature is blank
-    const blank = document.createElement('canvas');
-    blank.width = canvas.width;
-    blank.height = canvas.height;
-    if (sigData === blank.toDataURL()) {
-      showToast("Debe dibujar la firma del operador", "warning", 1800);
-      return;
-    }
-    
-    await db.operators.add({ name, signature: sigData });
-    
-    document.getElementById('settings-op-name').value = '';
-    const ctx = canvas.getContext('2d');
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    
-    showToast("Operador guardado con éxito", "success", 1800);
-    renderOperatorsList();
-    renderOperatorsDropdown();
   });
 
   // Select Operator Event on Registrar panel
   document.getElementById('select-operador-activo').addEventListener('change', async (e) => {
-    const opId = e.target.value;
-    if (!opId) return;
-    
-    const op = await db.operators.get(parseInt(opId));
-    if (op) {
-      document.getElementById('input-op-name-activo').value = op.name;
-      STATE.operatorName = op.name;
-      STATE.operatorSignature = op.signature;
+    try {
+      const opId = e.target.value;
+      if (!opId) return;
       
-      await db.settings.put({ key: 'operator_name', value: op.name });
-      await db.settings.put({ key: 'operator_signature', value: op.signature });
-      
-      const activeCanvas = document.getElementById('active-signature-canvas');
-      drawSignatureImageOnCanvas(activeCanvas, op.signature);
-      
-      lockActiveSignature(true); // Lock editing when preloading signature
-      document.getElementById('select-operador-activo').value = ''; // Reset dropdown
+      const op = await db.operators.get(parseInt(opId));
+      if (op) {
+        document.getElementById('input-op-name-activo').value = op.name;
+        STATE.operatorName = op.name;
+        STATE.operatorSignature = op.signature;
+        
+        await db.settings.put({ key: 'operator_name', value: op.name });
+        await db.settings.put({ key: 'operator_signature', value: op.signature });
+        
+        const activeCanvas = document.getElementById('active-signature-canvas');
+        drawSignatureImageOnCanvas(activeCanvas, op.signature);
+        
+        lockActiveSignature(true);
+        document.getElementById('select-operador-activo').value = '';
+      }
+    } catch (err) {
+      console.error("Error al cargar operador:", err);
     }
   });
 
@@ -1033,45 +1337,60 @@ async function setupPresetsHandlers() {
   });
 
   document.getElementById('btn-add-preset').addEventListener('click', async () => {
-    const placa = document.getElementById('preset-placa').value.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-    const tipo = document.getElementById('preset-tipo').value;
-    const zona = document.getElementById('preset-zona').value;
-    const area = document.getElementById('preset-area').value.trim();
-    const hasFuelIndicator = document.getElementById('preset-has-fuel').value === '1';
-    
-    if (!placa) {
-      showToast("Debe ingresar la placa del vehículo", "warning", 1800);
-      return;
+    try {
+      const placa = document.getElementById('preset-placa').value.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+      const tipo = document.getElementById('preset-tipo').value;
+      const zona = document.getElementById('preset-zona').value;
+      const area = document.getElementById('preset-area').value.trim();
+      const hasFuelIndicator = document.getElementById('preset-has-fuel').value === '1';
+      const kmPromedio = document.getElementById('preset-km-promedio') ? (parseFloat(document.getElementById('preset-km-promedio').value) || 0) : 0;
+      
+      if (!placa) {
+        showToast("Debe ingresar la placa del vehículo", "warning", 1800);
+        return;
+      }
+      
+      await db.presets.add({ placa, tipo, zona, area, hasFuelIndicator, kmPromedio });
+      
+      document.getElementById('preset-placa').value = '';
+      document.getElementById('preset-tipo').value = 'Moto';
+      document.getElementById('preset-area').value = '';
+      if (document.getElementById('preset-km-promedio')) document.getElementById('preset-km-promedio').value = '';
+      document.getElementById('preset-has-fuel').value = '1';
+      
+      showToast("Perfil de vehículo guardado con éxito", "success", 1800);
+      await renderPresetsList();
+      await renderPresetsDropdown();
+    } catch (err) {
+      console.error("Error al guardar perfil de vehículo:", err);
+      showToast("Error al guardar perfil: " + err.message, "error", 2500);
     }
-    
-    await db.presets.add({ placa, tipo, zona, area, hasFuelIndicator });
-    
-    document.getElementById('preset-placa').value = '';
-    document.getElementById('preset-tipo').value = 'Moto';
-    document.getElementById('preset-area').value = '';
-    document.getElementById('preset-has-fuel').value = '1';
-    
-    showToast("Perfil de vehículo guardado con éxito", "success", 1800);
-    renderPresetsList();
-    renderPresetsDropdown();
   });
   
   // Select Preset Event
   document.getElementById('select-preset').addEventListener('change', async (e) => {
-    const presetId = e.target.value;
-    if (!presetId) return;
-    
-    const preset = await db.presets.get(parseInt(presetId));
-    if (preset) {
-      document.getElementById('meta-placa').value = preset.placa;
-      document.getElementById('meta-tipo').value = preset.tipo || 'Moto';
-      document.getElementById('meta-zona').value = preset.zona;
-      document.getElementById('meta-area').value = preset.area;
-      document.getElementById('meta-has-fuel').value = (preset.hasFuelIndicator !== false) ? '1' : '0';
-      STATE.hasFuelIndicator = (preset.hasFuelIndicator !== false);
+    try {
+      const presetId = e.target.value;
+      if (!presetId) return;
       
-      await loadActiveWeekData();
-      document.getElementById('select-preset').value = ''; // Reset dropdown
+      const preset = await db.presets.get(parseInt(presetId));
+      if (preset) {
+        document.getElementById('meta-placa').value = preset.placa;
+        document.getElementById('meta-tipo').value = preset.tipo || 'Moto';
+        document.getElementById('meta-zona').value = preset.zona;
+        document.getElementById('meta-area').value = preset.area;
+        document.getElementById('meta-has-fuel').value = (preset.hasFuelIndicator !== false) ? '1' : '0';
+        if (document.getElementById('meta-km-promedio')) {
+          document.getElementById('meta-km-promedio').value = (preset.kmPromedio !== undefined && preset.kmPromedio !== null && preset.kmPromedio > 0) ? preset.kmPromedio : '';
+        }
+        STATE.hasFuelIndicator = (preset.hasFuelIndicator !== false);
+        STATE.kmPromedio = preset.kmPromedio || 0;
+        
+        await loadActiveWeekData();
+        document.getElementById('select-preset').value = ''; // Reset dropdown
+      }
+    } catch (err) {
+      console.error("Error al seleccionar preset:", err);
     }
   });
   
@@ -1080,96 +1399,119 @@ async function setupPresetsHandlers() {
 
 async function renderPresetsList() {
   const container = document.getElementById('presets-list');
+  if (!container) return;
   container.innerHTML = '';
   
-  const list = await db.presets.toArray();
-  if (list.length === 0) {
-    container.innerHTML = '<p class="helper-text">No hay perfiles configurados. Añada uno abajo.</p>';
-    return;
-  }
-  
-  list.forEach(p => {
-    const div = document.createElement('div');
-    div.className = 'preset-card';
-    const fuelText = (p.hasFuelIndicator !== false) ? 'Gasolina: SÍ' : 'Gasolina: NO (N/A)';
-    const tipoText = p.tipo || 'Moto';
-    div.innerHTML = `
-      <div class="preset-info">
-        <span class="preset-title">${p.placa}</span> (${tipoText}) | ${p.zona} - ${p.area} | <span style="font-weight: 500; font-size: 11px; color: var(--text-secondary);">${fuelText}</span>
-      </div>
-      <button class="btn btn-danger btn-sm btn-delete-preset" data-id="${p.id}">Eliminar</button>
-    `;
+  try {
+    const list = await db.presets.toArray();
+    if (!list || list.length === 0) {
+      container.innerHTML = '<p class="helper-text">No hay perfiles configurados. Añada uno abajo.</p>';
+      return;
+    }
     
-    div.querySelector('.btn-delete-preset').addEventListener('click', async () => {
-      if (confirm(`¿Eliminar perfil de placa ${p.placa}?`)) {
-        await db.presets.delete(p.id);
-        renderPresetsList();
-        renderPresetsDropdown();
-      }
+    list.forEach(p => {
+      const div = document.createElement('div');
+      div.className = 'preset-card';
+      const fuelText = (p.hasFuelIndicator !== false) ? 'Gasolina: SÍ' : 'Gasolina: NO (N/A)';
+      const tipoText = p.tipo || 'Moto';
+      const kmText = (p.kmPromedio && p.kmPromedio > 0) ? ` | Km Prom: ${p.kmPromedio} km/día` : '';
+      div.innerHTML = `
+        <div class="preset-info">
+          <span class="preset-title">${p.placa}</span> (${tipoText}) | ${p.zona} - ${p.area}${kmText} | <span style="font-weight: 500; font-size: 11px; color: var(--text-secondary);">${fuelText}</span>
+        </div>
+        <button class="btn btn-danger btn-sm btn-delete-preset" data-id="${p.id}">Eliminar</button>
+      `;
+      
+      div.querySelector('.btn-delete-preset').addEventListener('click', async () => {
+        if (confirm(`¿Eliminar perfil de placa ${p.placa}?`)) {
+          await db.presets.delete(p.id);
+          await renderPresetsList();
+          await renderPresetsDropdown();
+        }
+      });
+      
+      container.appendChild(div);
     });
-    
-    container.appendChild(div);
-  });
+  } catch (err) {
+    console.error("Error al renderizar lista de perfiles:", err);
+    container.innerHTML = `<p class="helper-text error-text">Error al cargar perfiles: ${err.message}</p>`;
+  }
 }
 
 async function renderPresetsDropdown() {
   const dropdown = document.getElementById('select-preset');
+  if (!dropdown) return;
   dropdown.innerHTML = '<option value="">-- Cargar Perfil Rápido --</option>';
   
-  const list = await db.presets.toArray();
-  list.forEach(p => {
-    const opt = document.createElement('option');
-    opt.value = p.id;
-    const labelArea = p.area ? p.area : (p.zona || 'Perfil');
-    opt.text = `${p.placa} (${labelArea})`;
-    dropdown.appendChild(opt);
-  });
+  try {
+    const list = await db.presets.toArray();
+    list.forEach(p => {
+      const opt = document.createElement('option');
+      opt.value = p.id;
+      const labelArea = p.area ? p.area : (p.zona || 'Perfil');
+      opt.text = `${p.placa} (${labelArea})`;
+      dropdown.appendChild(opt);
+    });
+  } catch (err) {
+    console.error("Error al renderizar dropdown de perfiles:", err);
+  }
 }
 
 async function renderOperatorsList() {
   const container = document.getElementById('operators-list');
+  if (!container) return;
   container.innerHTML = '';
   
-  const list = await db.operators.toArray();
-  if (list.length === 0) {
-    container.innerHTML = '<p class="helper-text">No hay operadores preguardados.</p>';
-    return;
-  }
-  
-  list.forEach(op => {
-    const div = document.createElement('div');
-    div.className = 'preset-card';
-    div.innerHTML = `
-      <div class="preset-info" style="display:flex; align-items:center; gap: 12px; flex:1;">
-        <span class="preset-title" style="min-width: 120px; font-weight:700;">${op.name}</span>
-        <img src="${op.signature}" style="max-height: 28px; max-width: 60px; background:#fff; border:1px solid #ccc; padding:2px; border-radius:4px;">
-      </div>
-      <button class="btn btn-danger btn-sm btn-delete-op" data-id="${op.id}">Eliminar</button>
-    `;
+  try {
+    const list = await db.operators.toArray();
+    if (!list || list.length === 0) {
+      container.innerHTML = '<p class="helper-text">No hay operadores preguardados.</p>';
+      return;
+    }
     
-    div.querySelector('.btn-delete-op').addEventListener('click', async () => {
-      if (confirm(`¿Eliminar operador ${op.name}?`)) {
-        await db.operators.delete(op.id);
-        renderOperatorsList();
-        renderOperatorsDropdown();
-      }
+    list.forEach(op => {
+      const div = document.createElement('div');
+      div.className = 'preset-card';
+      div.innerHTML = `
+        <div class="preset-info" style="display:flex; align-items:center; gap: 12px; flex:1;">
+          <span class="preset-title" style="min-width: 120px; font-weight:700;">${op.name}</span>
+          <img src="${op.signature}" style="max-height: 28px; max-width: 60px; background:#fff; border:1px solid #ccc; padding:2px; border-radius:4px;">
+        </div>
+        <button class="btn btn-danger btn-sm btn-delete-op" data-id="${op.id}">Eliminar</button>
+      `;
+      
+      div.querySelector('.btn-delete-op').addEventListener('click', async () => {
+        if (confirm(`¿Eliminar operador ${op.name}?`)) {
+          await db.operators.delete(op.id);
+          await renderOperatorsList();
+          await renderOperatorsDropdown();
+        }
+      });
+      
+      container.appendChild(div);
     });
-    
-    container.appendChild(div);
-  });
+  } catch (err) {
+    console.error("Error al renderizar operadores:", err);
+    container.innerHTML = `<p class="helper-text error-text">Error al cargar operadores: ${err.message}</p>`;
+  }
 }
 
 async function renderOperatorsDropdown() {
   const dropdown = document.getElementById('select-operador-activo');
+  if (!dropdown) return;
   dropdown.innerHTML = '<option value="">-- Cargar Operador --</option>';
   
-  const list = await db.operators.toArray();
-  list.forEach(op => {
-    const opt = document.createElement('option');
-    opt.value = op.id;
-    opt.text = op.name;
-    dropdown.appendChild(opt);
-  });
+  try {
+    const list = await db.operators.toArray();
+    list.forEach(op => {
+      const opt = document.createElement('option');
+      opt.value = op.id;
+      opt.text = op.name;
+      dropdown.appendChild(opt);
+    });
+  } catch (err) {
+    console.error("Error al renderizar dropdown de operadores:", err);
+  }
 }
 
 // --- 10. Signature Pad Canvas Drawing ---
@@ -1344,6 +1686,7 @@ async function renderHistoryList() {
           <span class="detail-badge">Tipo: ${week.tipo || 'Moto'}</span>
           <span class="detail-badge">Zona: ${week.zona}</span>
           <span class="detail-badge">Área: ${week.area || 'Sin área'}</span>
+          ${(week.kmPromedio && week.kmPromedio > 0) ? `<span class="detail-badge">Km Prom: ${week.kmPromedio} km/día</span>` : ''}
           <span class="detail-badge">Días Registrados: ${week.finishedDaysCount}/7</span>
           ${savedTimeStr ? `<span class="detail-badge" style="border-color: rgba(59, 174, 42, 0.4); color: var(--accent-light);">🕒 Guardado: ${savedTimeStr}</span>` : ''}
         </div>
@@ -1384,7 +1727,11 @@ async function renderHistoryList() {
       document.getElementById('meta-zona').value = week.zona;
       document.getElementById('meta-area').value = week.area;
       document.getElementById('meta-has-fuel').value = (week.hasFuelIndicator !== false) ? '1' : '0';
+      if (document.getElementById('meta-km-promedio')) {
+        document.getElementById('meta-km-promedio').value = week.kmPromedio || '';
+      }
       STATE.hasFuelIndicator = (week.hasFuelIndicator !== false);
+      STATE.kmPromedio = week.kmPromedio || 0;
       
       await loadActiveWeekData();
       

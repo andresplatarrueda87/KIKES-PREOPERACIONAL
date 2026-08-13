@@ -23,7 +23,7 @@
   <script src="lib/pdf-lib.min.js"></script>
   
   <!-- Styling -->
-  <link rel="stylesheet" href="style.css?v=44">
+  <link rel="stylesheet" href="style.css?v=50">
 </head>
 <body>
   
@@ -92,11 +92,15 @@
             </div>
           </div>
           
-          <!-- Fila 3: Área o Proceso -->
+          <!-- Fila 3: Área o Proceso y Km Promedio -->
           <div class="form-row">
-            <div class="form-group flex-1">
+            <div class="form-group flex-2">
               <label for="meta-area">Área o Proceso</label>
               <input type="text" id="meta-area" class="form-control" placeholder="Ej. Distribución, Ventas">
+            </div>
+            <div class="form-group flex-1">
+              <label for="meta-km-promedio">Km Promedio</label>
+              <input type="number" id="meta-km-promedio" class="form-control" placeholder="Ej. 25" min="0" step="1">
             </div>
           </div>
           
@@ -314,6 +318,10 @@
               <input type="text" id="preset-area" class="form-control" placeholder="Ej. Distribución Oriente">
             </div>
             <div class="form-group flex-1">
+              <label for="preset-km-promedio">Km Promedio</label>
+              <input type="number" id="preset-km-promedio" class="form-control" placeholder="Ej. 25" min="0" step="1">
+            </div>
+            <div class="form-group flex-1">
               <label for="preset-has-fuel">Nivel Gasolina</label>
               <select id="preset-has-fuel" class="form-control">
                 <option value="1" selected>SÍ (Tiene)</option>
@@ -366,6 +374,6 @@
     </div>
   </div>
   
-  <script src="app.js?v=44"></script>
+  <script src="app.js?v=50"></script>
 </body>
 </html>
