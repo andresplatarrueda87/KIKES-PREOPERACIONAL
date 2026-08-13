@@ -1,12 +1,12 @@
-const CACHE_NAME = 'kikes-preop-v24';
+const CACHE_NAME = 'kikes-preop-v26';
 const ASSETS = [
   './',
   './index.html',
   './style.css',
   './app.js',
   './manifest.json',
-  './app_icon.png',
-  './KIKESPREOPERACIONICO.png',
+  './app_icon_192.png',
+  './app_icon_512.png',
   './Kikes_logo.png',
   './lib/dexie.min.js',
   './lib/pdf-lib.min.js'
