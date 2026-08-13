@@ -380,13 +380,11 @@ async function loadActiveWeekData() {
   STATE.currentPlaca = placa;
   
   if (!placa) {
-    // Disable form fields if no plate is provided
+    // Disable form fields if no plate is provided (keep buttons clickable so warning toast fires)
     document.getElementById('tab-bar-days').style.opacity = '0.4';
     document.getElementById('tab-bar-days').style.pointerEvents = 'none';
     document.querySelector('.day-form-container').style.opacity = '0.4';
     document.querySelector('.day-form-container').style.pointerEvents = 'none';
-    document.getElementById('btn-save-week').disabled = true;
-    document.getElementById('btn-fill-week').disabled = true;
     return;
   }
   
@@ -395,8 +393,6 @@ async function loadActiveWeekData() {
   document.getElementById('tab-bar-days').style.pointerEvents = 'auto';
   document.querySelector('.day-form-container').style.opacity = '1';
   document.querySelector('.day-form-container').style.pointerEvents = 'auto';
-  document.getElementById('btn-save-week').disabled = false;
-  document.getElementById('btn-fill-week').disabled = false;
   
   // Check preset and last record for fuel indicator priority
   const preset = await db.presets.where('placa').equalsIgnoreCase(placa).first();
@@ -752,6 +748,12 @@ function setupFormChangeHandlers() {
   
   // "Toda la Semana OK"
   document.getElementById('btn-fill-week').addEventListener('click', async () => {
+    const placa = document.getElementById('meta-placa').value.trim();
+    if (!placa) {
+      showToast("Debe ingresar la placa del vehículo para autocompletar", "warning", 2000);
+      return;
+    }
+    if (!STATE.activeWeekData) await loadActiveWeekData();
     if (!STATE.activeWeekData) return;
     
     const confirmFill = confirm("¿Desea autocompletar Lunes a Domingo con respuestas 'Conforme' por defecto? El kilometraje se estimará incrementalmente.");

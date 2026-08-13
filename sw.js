@@ -1,4 +1,4 @@
-const CACHE_NAME = 'kikes-preop-v32';
+const CACHE_NAME = 'kikes-preop-v33';
 const ASSETS = [
   './',
   './index.html',
