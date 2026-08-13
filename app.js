@@ -1334,8 +1334,8 @@ async function renderHistoryList() {
           <span class="history-placa">${week.placa}</span>
           <span class="history-dates">${formatDateShort(dates[0])} - ${formatDateShort(dates[6])}</span>
         </div>
-        <button type="button" class="btn btn-text btn-sm btn-toggle-card" style="color: var(--accent-light); font-size: 12.5px; font-weight: 600; padding: 2px 8px;">
-          <span class="toggle-text">${isExpandedDefault ? '▲ Reducir' : '▼ Detallar'}</span>
+        <button type="button" class="btn btn-text btn-sm btn-toggle-card" style="color: var(--accent-light); font-size: 14px; font-weight: 700; padding: 2px 8px;">
+          <span class="toggle-text">${isExpandedDefault ? '▲' : '▼'}</span>
         </button>
       </div>
       
@@ -1367,12 +1367,12 @@ async function renderHistoryList() {
         card.classList.remove('expanded');
         card.classList.add('collapsed');
         bodyEl.style.display = 'none';
-        toggleTextEl.innerText = '▼ Detallar';
+        toggleTextEl.innerText = '▼';
       } else {
         card.classList.remove('collapsed');
         card.classList.add('expanded');
         bodyEl.style.display = 'block';
-        toggleTextEl.innerText = '▲ Reducir';
+        toggleTextEl.innerText = '▲';
       }
     });
     
