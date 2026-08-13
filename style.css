@@ -500,17 +500,35 @@ textarea.form-control {
   justify-content: flex-end;
 }
 
-/* History Cards */
+/* History Cards (Accordion/Collapsible) */
 .history-card {
   display: flex;
   flex-direction: column;
+  transition: all 0.25s ease-in-out;
+}
+
+.history-card.collapsed {
+  gap: 0;
+  padding: 10px 14px !important;
+  margin-bottom: 8px !important;
+}
+
+.history-card.expanded {
   gap: 10px;
+  padding: 16px !important;
+  margin-bottom: 12px !important;
 }
 
 .history-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  user-select: none;
+  cursor: pointer;
+}
+
+.history-header:hover {
+  opacity: 0.92;
 }
 
 .history-placa {

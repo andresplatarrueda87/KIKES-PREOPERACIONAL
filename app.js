@@ -1321,30 +1321,60 @@ async function renderHistoryList() {
     return;
   }
   
-  weeksArray.forEach(week => {
+  weeksArray.forEach((week, index) => {
     const dates = getWeekDates(week.weekId);
     const savedTimeStr = week.updatedAt ? formatDateTime(new Date(week.updatedAt)) : '';
+    const isExpandedDefault = (index === 0); // Most recent record starts expanded by default
+    
     const card = document.createElement('div');
-    card.className = 'card history-card';
+    card.className = `card history-card ${isExpandedDefault ? 'expanded' : 'collapsed'}`;
     card.innerHTML = `
       <div class="history-header">
-        <span class="history-placa">${week.placa}</span>
-        <span class="history-dates">${formatDateShort(dates[0])} - ${formatDateShort(dates[6])}</span>
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span class="history-placa">${week.placa}</span>
+          <span class="history-dates">${formatDateShort(dates[0])} - ${formatDateShort(dates[6])}</span>
+        </div>
+        <button type="button" class="btn btn-text btn-sm btn-toggle-card" style="color: var(--accent-light); font-size: 12.5px; font-weight: 600; padding: 2px 8px;">
+          <span class="toggle-text">${isExpandedDefault ? '▲ Reducir' : '▼ Detallar'}</span>
+        </button>
       </div>
-      <div class="history-details">
-        <span class="detail-badge">Tipo: ${week.tipo || 'Moto'}</span>
-        <span class="detail-badge">Zona: ${week.zona}</span>
-        <span class="detail-badge">Área: ${week.area || 'Sin área'}</span>
-        <span class="detail-badge">Días Registrados: ${week.finishedDaysCount}/7</span>
-        ${savedTimeStr ? `<span class="detail-badge" style="border-color: rgba(59, 174, 42, 0.4); color: var(--accent-light);">🕒 Guardado: ${savedTimeStr}</span>` : ''}
-      </div>
-      <div class="history-actions">
-        <button class="btn btn-secondary btn-sm btn-edit-hist" data-id="${week.id}">Editar</button>
-        <button class="btn btn-accent btn-sm btn-pdf-hist" data-id="${week.id}">Generar PDF</button>
-        <button class="btn btn-sm btn-email-hist" data-id="${week.id}" style="background-color: #ea4335; color: #ffffff; border: none; font-weight: 500;">✉️ Correo</button>
-        <button class="btn btn-danger btn-sm btn-delete-hist" data-id="${week.id}">Eliminar</button>
+      
+      <div class="history-body" style="${isExpandedDefault ? 'display: block;' : 'display: none;'}">
+        <div class="history-details margin-top-12">
+          <span class="detail-badge">Tipo: ${week.tipo || 'Moto'}</span>
+          <span class="detail-badge">Zona: ${week.zona}</span>
+          <span class="detail-badge">Área: ${week.area || 'Sin área'}</span>
+          <span class="detail-badge">Días Registrados: ${week.finishedDaysCount}/7</span>
+          ${savedTimeStr ? `<span class="detail-badge" style="border-color: rgba(59, 174, 42, 0.4); color: var(--accent-light);">🕒 Guardado: ${savedTimeStr}</span>` : ''}
+        </div>
+        <div class="history-actions margin-top-12">
+          <button class="btn btn-secondary btn-sm btn-edit-hist" data-id="${week.id}">Editar</button>
+          <button class="btn btn-accent btn-sm btn-pdf-hist" data-id="${week.id}">Generar PDF</button>
+          <button class="btn btn-sm btn-email-hist" data-id="${week.id}" style="background-color: #ea4335; color: #ffffff; border: none; font-weight: 500;">✉️ Correo</button>
+          <button class="btn btn-danger btn-sm btn-delete-hist" data-id="${week.id}">Eliminar</button>
+        </div>
       </div>
     `;
+    
+    // Toggle header click handler
+    const headerEl = card.querySelector('.history-header');
+    const bodyEl = card.querySelector('.history-body');
+    const toggleTextEl = card.querySelector('.toggle-text');
+    
+    headerEl.addEventListener('click', () => {
+      const isExpanded = card.classList.contains('expanded');
+      if (isExpanded) {
+        card.classList.remove('expanded');
+        card.classList.add('collapsed');
+        bodyEl.style.display = 'none';
+        toggleTextEl.innerText = '▼ Detallar';
+      } else {
+        card.classList.remove('collapsed');
+        card.classList.add('expanded');
+        bodyEl.style.display = 'block';
+        toggleTextEl.innerText = '▲ Reducir';
+      }
+    });
     
     // Wire button events
     card.querySelector('.btn-edit-hist').addEventListener('click', async () => {
