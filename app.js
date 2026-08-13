@@ -1370,6 +1370,7 @@ function setupDataManagementHandlers() {
         showToast("Restauración de datos completada con éxito", "success", 2000);
         await loadSettings();
         await renderOperatorsDropdown();
+        await renderOperatorsList();
         await renderPresetsDropdown();
         await renderPresetsList();
         await loadActiveWeekData(); // Reload active week inputs and layout
