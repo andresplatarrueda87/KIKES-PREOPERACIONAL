@@ -204,6 +204,16 @@ function formatDateShort(date) {
   return `${d}/${m}/${y}`;
 }
 
+function formatDateTime(date) {
+  if (!date || isNaN(date.getTime())) return '';
+  const d = String(date.getDate()).padStart(2, '0');
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const y = date.getFullYear();
+  const hh = String(date.getHours()).padStart(2, '0');
+  const mm = String(date.getMinutes()).padStart(2, '0');
+  return `${d}/${m}/${y} ${hh}:${mm}`;
+}
+
 function getWeekNumber(date) {
   const tempDate = new Date(date.valueOf());
   tempDate.setDate(tempDate.getDate() + 4 - (tempDate.getDay() || 7));
@@ -274,6 +284,7 @@ function initNewWeekData(weekId, placa, zona, area, tipo, hasFuelIndicator) {
     area: area,
     tipo: tipo || 'Moto',
     hasFuelIndicator: hasFuelIndicator !== false,
+    updatedAt: new Date().toISOString(),
     days: []
   };
   
@@ -746,6 +757,7 @@ function setupFormChangeHandlers() {
     });
     
     STATE.activeWeekData.finishedDaysCount = finishedDays;
+    STATE.activeWeekData.updatedAt = new Date().toISOString();
     
     try {
       await db.weeks.put(STATE.activeWeekData);
@@ -1148,6 +1160,7 @@ async function renderHistoryList() {
   
   weeksArray.forEach(week => {
     const dates = getWeekDates(week.weekId);
+    const savedTimeStr = week.updatedAt ? formatDateTime(new Date(week.updatedAt)) : '';
     const card = document.createElement('div');
     card.className = 'card history-card';
     card.innerHTML = `
@@ -1160,6 +1173,7 @@ async function renderHistoryList() {
         <span class="detail-badge">Zona: ${week.zona}</span>
         <span class="detail-badge">Área: ${week.area || 'Sin área'}</span>
         <span class="detail-badge">Días Registrados: ${week.finishedDaysCount}/7</span>
+        ${savedTimeStr ? `<span class="detail-badge" style="border-color: rgba(59, 174, 42, 0.4); color: var(--accent-light);">🕒 Guardado: ${savedTimeStr}</span>` : ''}
       </div>
       <div class="history-actions">
         <button class="btn btn-secondary btn-sm btn-edit-hist" data-id="${week.id}">Editar</button>
