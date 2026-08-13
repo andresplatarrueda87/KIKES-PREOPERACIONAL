@@ -1,4 +1,4 @@
-const CACHE_NAME = 'kikes-preop-v2';
+const CACHE_NAME = 'kikes-preop-v23';
 const ASSETS = [
   './',
   './index.html',
@@ -6,16 +6,18 @@ const ASSETS = [
   './app.js',
   './manifest.json',
   './app_icon.png',
+  './KIKESPREOPERACIONICO.png',
   './Kikes_logo.png',
   './lib/dexie.min.js',
   './lib/pdf-lib.min.js'
 ];
 
 self.addEventListener('install', (e) => {
+  self.skipWaiting();
   e.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       return cache.addAll(ASSETS);
-    }).then(() => self.skipWaiting())
+    })
   );
 });
 
@@ -34,24 +36,19 @@ self.addEventListener('activate', (e) => {
 });
 
 self.addEventListener('fetch', (e) => {
-  // Respond from cache, otherwise fetch from network
+  // Network-first strategy for app files to fetch latest edits immediately
   e.respondWith(
-    caches.match(e.request).then((cachedResponse) => {
-      if (cachedResponse) {
-        return cachedResponse;
+    fetch(e.request).then((networkResponse) => {
+      if (e.request.method === 'GET' && networkResponse.status === 200) {
+        const responseClone = networkResponse.clone();
+        caches.open(CACHE_NAME).then((cache) => {
+          cache.put(e.request, responseClone);
+        });
       }
-      return fetch(e.request).then((networkResponse) => {
-        // Only cache valid GET responses
-        if (e.request.method === 'GET' && networkResponse.status === 200) {
-          return caches.open(CACHE_NAME).then((cache) => {
-            cache.put(e.request, networkResponse.clone());
-            return networkResponse;
-          });
-        }
-        return networkResponse;
-      }).catch(() => {
-        // Offline fallback could be placed here if needed
-      });
+      return networkResponse;
+    }).catch(() => {
+      // Fallback to cache when offline
+      return caches.match(e.request);
     })
   );
 });

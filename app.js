@@ -21,7 +21,7 @@ const CHECKLIST_STRUCTURE = [
       { id: "ru_delantera_libre", text: "Delantera gira libre sin ruidos anormales" },
       { id: "ru_trasera_estado", text: "Trasera (Estado)" },
       { id: "ru_trasera_libre", text: "Trasera gira libre sin ruidos anormales" },
-      { id: "ru_motocarguero_llantas", text: "Estado de las llantas traseras (Aplica motocargueros)" }
+      { id: "ru_motocarguero_llantas", text: "Estado de las llantas traseras (Aplica motocargueros)", onlyMotocarga: true }
     ]
   },
   {
@@ -37,7 +37,7 @@ const CHECKLIST_STRUCTURE = [
       { id: "ex_asiento", text: "Asiento y tapizado sin cortes, rasgaduras o roturas" },
       { id: "ex_manubrio", text: "Manubrio y mangos en buen estado" },
       { id: "ex_indicadores_tablero_2", text: "Funcionamiento de indicadores del tablero" },
-      { id: "ex_motocarguero_carpa", text: "Estado de la carpa y el chasis (Aplica motocarguero)" }
+      { id: "ex_motocarguero_carpa", text: "Estado de la carpa y el chasis (Aplica motocarguero)", onlyMotocarga: true }
     ]
   },
   {
@@ -261,8 +261,9 @@ async function loadSettings() {
   }
 }
 
-function initNewWeekData(weekId, placa, zona, area) {
+function initNewWeekData(weekId, placa, zona, area, tipo, hasFuelIndicator) {
   const dates = getWeekDates(weekId);
+  const defaultFuel = (hasFuelIndicator === false) ? 'N/A' : '1/2';
   const weekData = {
     id: `${weekId}-${placa.toUpperCase()}`,
     weekId: weekId,
@@ -271,6 +272,8 @@ function initNewWeekData(weekId, placa, zona, area) {
     placa: placa.toUpperCase(),
     zona: zona,
     area: area,
+    tipo: tipo || 'Moto',
+    hasFuelIndicator: hasFuelIndicator !== false,
     days: []
   };
   
@@ -279,7 +282,7 @@ function initNewWeekData(weekId, placa, zona, area) {
     const dayData = {
       date: formatDateISO(dates[i]),
       km: null,
-      fuel: '1/2',
+      fuel: defaultFuel,
       checklist: {}, // Maps item.id to "C" or "NC" or null
       observaciones: ''
     };
@@ -297,11 +300,18 @@ function initNewWeekData(weekId, placa, zona, area) {
 async function checkPlacaFuelIndicator(placa) {
   if (!placa) return true;
   const p = await db.presets.where('placa').equalsIgnoreCase(placa).first();
-  return p ? (p.hasFuelIndicator !== false) : true;
+  if (p && typeof p.hasFuelIndicator === 'boolean') {
+    return p.hasFuelIndicator;
+  }
+  return true;
 }
 
 function updateFuelPickerUI() {
   const hasFuel = (STATE.hasFuelIndicator !== false);
+  const selectEl = document.getElementById('meta-has-fuel');
+  if (selectEl) {
+    selectEl.value = hasFuel ? '1' : '0';
+  }
   const fuelBtns = document.querySelectorAll('#fuel-picker-container .fuel-btn');
   
   fuelBtns.forEach(btn => {
@@ -311,20 +321,14 @@ function updateFuelPickerUI() {
       btn.style.display = hasFuel ? 'inline-block' : 'none';
     }
   });
-  
-  // Update the metadata card display label dynamically
-  const displayEl = document.getElementById('meta-fuel-indicator-display');
-  if (displayEl) {
-    displayEl.innerText = hasFuel ? 'SÍ (Tiene)' : 'NO (N/A)';
-    displayEl.style.color = hasFuel ? 'var(--accent-color)' : '#f44336';
-  }
 }
 
 async function loadActiveWeekData() {
   const weekId = document.getElementById('select-semana').value;
-  const placa = document.getElementById('meta-placa').value.trim().toUpperCase();
+  const placa = document.getElementById('meta-placa').value.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
   const zona = document.getElementById('meta-zona').value;
   const area = document.getElementById('meta-area').value.trim();
+  const tipo = document.getElementById('meta-tipo').value;
   
   STATE.currentWeekId = weekId;
   STATE.currentPlaca = placa;
@@ -348,27 +352,51 @@ async function loadActiveWeekData() {
   document.getElementById('btn-save-week').disabled = false;
   document.getElementById('btn-fill-week').disabled = false;
   
-  // Check if plate has a fuel indicator
-  const hasFuel = await checkPlacaFuelIndicator(placa);
-  STATE.hasFuelIndicator = hasFuel;
+  // Check preset and last record for fuel indicator priority
+  const preset = await db.presets.where('placa').equalsIgnoreCase(placa).first();
+  const lastActiveRecord = await db.weeks.where('placa').equals(placa).first();
+  
+  let hasFuel = true;
+  if (preset && typeof preset.hasFuelIndicator === 'boolean') {
+    hasFuel = preset.hasFuelIndicator;
+  } else if (lastActiveRecord && typeof lastActiveRecord.hasFuelIndicator === 'boolean') {
+    hasFuel = lastActiveRecord.hasFuelIndicator;
+  }
   
   const searchId = `${weekId}-${placa}`;
   let weekData = await db.weeks.get(searchId);
   
   if (!weekData) {
-    // Check if there is an existing week data for this plate in a previous week to copy metadata
-    const lastActiveRecord = await db.weeks.where('placa').equals(placa).first();
-    const finalArea = area || (lastActiveRecord ? lastActiveRecord.area : '');
-    const finalZona = lastActiveRecord ? lastActiveRecord.zona : zona;
+    const finalArea = area || (lastActiveRecord ? lastActiveRecord.area : (preset ? preset.area : ''));
+    const finalZona = lastActiveRecord ? lastActiveRecord.zona : (preset ? preset.zona : zona);
+    const finalTipo = lastActiveRecord ? (lastActiveRecord.tipo || 'Moto') : (preset ? (preset.tipo || 'Moto') : tipo);
     
     document.getElementById('meta-area').value = finalArea;
     document.getElementById('meta-zona').value = finalZona;
+    document.getElementById('meta-tipo').value = finalTipo;
+    document.getElementById('meta-has-fuel').value = hasFuel ? '1' : '0';
+    STATE.hasFuelIndicator = hasFuel;
     
-    weekData = initNewWeekData(weekId, placa, finalZona, finalArea);
+    weekData = initNewWeekData(weekId, placa, finalZona, finalArea, finalTipo, hasFuel);
   } else {
-    // Fill inputs with saved database values
+    // If weekData exists, preset configuration still overrides if available
+    if (preset && typeof preset.hasFuelIndicator === 'boolean') {
+      hasFuel = preset.hasFuelIndicator;
+    } else if (typeof weekData.hasFuelIndicator === 'boolean') {
+      hasFuel = weekData.hasFuelIndicator;
+    }
+    
     document.getElementById('meta-zona').value = weekData.zona;
     document.getElementById('meta-area').value = weekData.area;
+    document.getElementById('meta-tipo').value = weekData.tipo || 'Moto';
+    document.getElementById('meta-has-fuel').value = hasFuel ? '1' : '0';
+    STATE.hasFuelIndicator = hasFuel;
+    weekData.hasFuelIndicator = hasFuel;
+  }
+  
+  // Force fuel = 'N/A' across all 7 days if vehicle has no fuel indicator
+  if (!STATE.hasFuelIndicator) {
+    weekData.days.forEach(d => { d.fuel = 'N/A'; });
   }
   
   STATE.activeWeekData = weekData;
@@ -440,6 +468,9 @@ function renderChecklistGrid(dayData) {
   const container = document.getElementById('checklist-container');
   container.innerHTML = '';
   
+  const currentTipo = STATE.activeWeekData ? (STATE.activeWeekData.tipo || document.getElementById('meta-tipo').value) : document.getElementById('meta-tipo').value;
+  const isMoto = (currentTipo === 'Moto');
+  
   CHECKLIST_STRUCTURE.forEach(group => {
     const groupDiv = document.createElement('div');
     groupDiv.className = 'checklist-group';
@@ -454,15 +485,23 @@ function renderChecklistGrid(dayData) {
     
     group.items.forEach(item => {
       const itemDiv = document.createElement('div');
-      itemDiv.className = 'checklist-item';
+      const isDisabledItem = item.onlyMotocarga && isMoto;
+      itemDiv.className = `checklist-item ${isDisabledItem ? 'disabled-motocarga' : ''}`;
+      
+      // If disabled because vehicle is Moto, keep item answer as null
+      if (isDisabledItem) {
+        dayData.checklist[item.id] = null;
+      }
       
       const currentVal = dayData.checklist[item.id]; // 'C', 'NC', or null
+      const disabledAttr = isDisabledItem ? 'disabled' : '';
+      const disabledTextNote = isDisabledItem ? ' <span class="na-tag">(N/A - Solo Motocarga)</span>' : '';
       
       itemDiv.innerHTML = `
-        <div class="item-text">${item.text}</div>
+        <div class="item-text">${item.text}${disabledTextNote}</div>
         <div class="item-toggle-group">
-          <button type="button" class="toggle-btn toggle-btn-c ${currentVal === 'C' ? 'active' : ''}" data-item="${item.id}" data-status="C">C</button>
-          <button type="button" class="toggle-btn toggle-btn-nc ${currentVal === 'NC' ? 'active' : ''}" data-item="${item.id}" data-status="NC">NC</button>
+          <button type="button" class="toggle-btn toggle-btn-c ${currentVal === 'C' ? 'active' : ''}" data-item="${item.id}" data-status="C" ${disabledAttr}>C</button>
+          <button type="button" class="toggle-btn toggle-btn-nc ${currentVal === 'NC' ? 'active' : ''}" data-item="${item.id}" data-status="NC" ${disabledAttr}>NC</button>
         </div>
       `;
       
@@ -474,7 +513,7 @@ function renderChecklistGrid(dayData) {
   });
   
   // Setup click handlers for checklist toggle buttons
-  const toggleBtns = container.querySelectorAll('.toggle-btn');
+  const toggleBtns = container.querySelectorAll('.toggle-btn:not([disabled])');
   toggleBtns.forEach(btn => {
     btn.addEventListener('click', () => {
       const itemId = btn.getAttribute('data-item');
@@ -574,8 +613,22 @@ function setupFormChangeHandlers() {
   });
 
   document.getElementById('meta-placa').addEventListener('input', (e) => {
-    e.target.value = e.target.value.toUpperCase();
+    e.target.value = e.target.value.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
     loadActiveWeekData();
+  });
+  document.getElementById('meta-tipo').addEventListener('change', () => {
+    if (STATE.activeWeekData) {
+      STATE.activeWeekData.tipo = document.getElementById('meta-tipo').value;
+      renderActiveDayData();
+    }
+  });
+  document.getElementById('meta-has-fuel').addEventListener('change', (e) => {
+    const hasFuel = (e.target.value === '1');
+    STATE.hasFuelIndicator = hasFuel;
+    if (STATE.activeWeekData) {
+      STATE.activeWeekData.hasFuelIndicator = hasFuel;
+    }
+    renderActiveDayData();
   });
   document.getElementById('meta-zona').addEventListener('change', () => {
     if (STATE.activeWeekData) STATE.activeWeekData.zona = document.getElementById('meta-zona').value;
@@ -606,13 +659,22 @@ function setupFormChangeHandlers() {
   document.getElementById('btn-fill-day').addEventListener('click', () => {
     if (!STATE.activeWeekData) return;
     
+    const isMoto = (STATE.activeWeekData.tipo || document.getElementById('meta-tipo').value || 'Moto') === 'Moto';
     const dayData = STATE.activeWeekData.days[STATE.activeDayIndex];
     ALL_ITEMS.forEach(item => {
-      dayData.checklist[item.id] = 'C';
+      if (item.onlyMotocarga && isMoto) {
+        dayData.checklist[item.id] = null;
+      } else {
+        dayData.checklist[item.id] = 'C';
+      }
     });
     
-    // Automatically select fuel as 1/2 if blank
-    if (!dayData.fuel) dayData.fuel = '1/2';
+    // Automatically select fuel as 1/2 if blank (or N/A if vehicle has no fuel meter)
+    if (STATE.hasFuelIndicator === false) {
+      dayData.fuel = 'N/A';
+    } else if (!dayData.fuel || dayData.fuel === 'N/A') {
+      dayData.fuel = '1/2';
+    }
     
     renderActiveDayData();
   });
@@ -626,6 +688,7 @@ function setupFormChangeHandlers() {
     
     saveCurrentActiveDayToState(); // Save what is currently edited
     
+    const isMoto = (STATE.activeWeekData.tipo || document.getElementById('meta-tipo').value || 'Moto') === 'Moto';
     let baseKm = parseFloat(document.getElementById('day-km').value) || 0;
     if (baseKm === 0) {
       // Look for previous week's Sunday
@@ -637,10 +700,18 @@ function setupFormChangeHandlers() {
     STATE.activeWeekData.days.forEach((dayData, idx) => {
       // 1. Checklist
       ALL_ITEMS.forEach(item => {
-        dayData.checklist[item.id] = 'C';
+        if (item.onlyMotocarga && isMoto) {
+          dayData.checklist[item.id] = null;
+        } else {
+          dayData.checklist[item.id] = 'C';
+        }
       });
       // 2. Fuel
-      if (!dayData.fuel) dayData.fuel = '1/2';
+      if (STATE.hasFuelIndicator === false) {
+        dayData.fuel = 'N/A';
+      } else if (!dayData.fuel || dayData.fuel === 'N/A') {
+        dayData.fuel = '1/2';
+      }
       // 3. Estimate Km (increase by 15-30km daily)
       if (dayData.km === null) {
         dayData.km = baseKm + (idx * 20);
@@ -656,12 +727,20 @@ function setupFormChangeHandlers() {
     if (!STATE.activeWeekData) return;
     
     saveCurrentActiveDayToState();
+    STATE.activeWeekData.tipo = document.getElementById('meta-tipo').value;
+    STATE.activeWeekData.hasFuelIndicator = (document.getElementById('meta-has-fuel').value === '1');
+    
+    const isMoto = STATE.activeWeekData.tipo === 'Moto';
+    const applicableItems = ALL_ITEMS.filter(item => !(item.onlyMotocarga && isMoto));
     
     // Calculate finished days count
     let finishedDays = 0;
     STATE.activeWeekData.days.forEach(day => {
-      const answeredCount = Object.values(day.checklist).filter(v => v !== null).length;
-      if (answeredCount === ALL_ITEMS.length && day.km !== null) {
+      const answeredCount = Object.keys(day.checklist).filter(id => {
+        const isApplicable = applicableItems.some(i => i.id === id);
+        return isApplicable && day.checklist[id] !== null;
+      }).length;
+      if (answeredCount === applicableItems.length && day.km !== null) {
         finishedDays++;
       }
     });
@@ -741,8 +820,13 @@ async function setupPresetsHandlers() {
   });
 
   // Add preset button
+  document.getElementById('preset-placa').addEventListener('input', (e) => {
+    e.target.value = e.target.value.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+  });
+
   document.getElementById('btn-add-preset').addEventListener('click', async () => {
-    const placa = document.getElementById('preset-placa').value.trim().toUpperCase();
+    const placa = document.getElementById('preset-placa').value.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+    const tipo = document.getElementById('preset-tipo').value;
     const zona = document.getElementById('preset-zona').value;
     const area = document.getElementById('preset-area').value.trim();
     const hasFuelIndicator = document.getElementById('preset-has-fuel').value === '1';
@@ -752,9 +836,10 @@ async function setupPresetsHandlers() {
       return;
     }
     
-    await db.presets.add({ placa, zona, area, hasFuelIndicator });
+    await db.presets.add({ placa, tipo, zona, area, hasFuelIndicator });
     
     document.getElementById('preset-placa').value = '';
+    document.getElementById('preset-tipo').value = 'Moto';
     document.getElementById('preset-area').value = '';
     document.getElementById('preset-has-fuel').value = '1';
     
@@ -770,8 +855,11 @@ async function setupPresetsHandlers() {
     const preset = await db.presets.get(parseInt(presetId));
     if (preset) {
       document.getElementById('meta-placa').value = preset.placa;
+      document.getElementById('meta-tipo').value = preset.tipo || 'Moto';
       document.getElementById('meta-zona').value = preset.zona;
       document.getElementById('meta-area').value = preset.area;
+      document.getElementById('meta-has-fuel').value = (preset.hasFuelIndicator !== false) ? '1' : '0';
+      STATE.hasFuelIndicator = (preset.hasFuelIndicator !== false);
       
       await loadActiveWeekData();
       document.getElementById('select-preset').value = ''; // Reset dropdown
@@ -795,9 +883,10 @@ async function renderPresetsList() {
     const div = document.createElement('div');
     div.className = 'preset-card';
     const fuelText = (p.hasFuelIndicator !== false) ? 'Gasolina: SÍ' : 'Gasolina: NO (N/A)';
+    const tipoText = p.tipo || 'Moto';
     div.innerHTML = `
       <div class="preset-info">
-        <span class="preset-title">${p.placa}</span> | ${p.zona} - ${p.area} | <span style="font-weight: 500; font-size: 11px; color: var(--text-secondary);">${fuelText}</span>
+        <span class="preset-title">${p.placa}</span> (${tipoText}) | ${p.zona} - ${p.area} | <span style="font-weight: 500; font-size: 11px; color: var(--text-secondary);">${fuelText}</span>
       </div>
       <button class="btn btn-danger btn-sm btn-delete-preset" data-id="${p.id}">Eliminar</button>
     `;
@@ -822,7 +911,8 @@ async function renderPresetsDropdown() {
   list.forEach(p => {
     const opt = document.createElement('option');
     opt.value = p.id;
-    opt.text = `${p.placa} (${p.area})`;
+    const labelArea = p.area ? p.area : (p.zona || 'Perfil');
+    opt.text = `${p.placa} (${labelArea})`;
     dropdown.appendChild(opt);
   });
 }
@@ -1032,6 +1122,7 @@ async function renderHistoryList() {
         <span class="history-dates">${formatDateShort(dates[0])} - ${formatDateShort(dates[6])}</span>
       </div>
       <div class="history-details">
+        <span class="detail-badge">Tipo: ${week.tipo || 'Moto'}</span>
         <span class="detail-badge">Zona: ${week.zona}</span>
         <span class="detail-badge">Área: ${week.area || 'Sin área'}</span>
         <span class="detail-badge">Días Registrados: ${week.finishedDaysCount}/7</span>
@@ -1047,8 +1138,11 @@ async function renderHistoryList() {
     card.querySelector('.btn-edit-hist').addEventListener('click', async () => {
       document.getElementById('select-semana').value = week.weekId;
       document.getElementById('meta-placa').value = week.placa;
+      document.getElementById('meta-tipo').value = week.tipo || 'Moto';
       document.getElementById('meta-zona').value = week.zona;
       document.getElementById('meta-area').value = week.area;
+      document.getElementById('meta-has-fuel').value = (week.hasFuelIndicator !== false) ? '1' : '0';
+      STATE.hasFuelIndicator = (week.hasFuelIndicator !== false);
       
       await loadActiveWeekData();
       
@@ -1126,6 +1220,8 @@ function setupDataManagementHandlers() {
         alert("Restauración completada con éxito.");
         await loadSettings();
         await renderOperatorsDropdown();
+        await renderPresetsDropdown();
+        await renderPresetsList();
         await loadActiveWeekData(); // Reload active week inputs and layout
       } catch (err) {
         alert("Error al importar el archivo. El formato JSON no es válido.");
@@ -1227,23 +1323,31 @@ async function generatePdfForWeek(weekData) {
     // Placa
     page1.drawText(weekData.placa.toUpperCase(), { x: 50, y: 633, size: 10, font: helveticaBold });
     
+    // Kilometraje X centers (shifted left for Lunes to Jueves for clean centering)
+    const kmCenters = [316.0, 356.5, 397.0, 437.5, 478.0, 516.5, 554.5];
+    // Combustible X centers
+    const fuelCenters = [320.0, 360.5, 401.0, 441.5, 482.0, 518.0, 556.5];
+    
     // Kilometraje (daily)
     for (let d = 0; d < 7; d++) {
       const km = weekData.days[d].km;
       if (km !== null) {
         const kmStr = String(km);
         const textWidth = helveticaBold.widthOfTextAtSize(kmStr, 7.5);
-        page1.drawText(kmStr, { x: 320 + d * 40.5 - (textWidth / 2), y: 638, size: 7.5, font: helveticaBold });
+        const drawX = kmCenters[d] - (textWidth / 2);
+        page1.drawText(kmStr, { x: drawX, y: 638, size: 7.5, font: helveticaBold });
       }
     }
     
     // Combustible (daily)
+    const weekHasFuel = (weekData.hasFuelIndicator !== false);
     for (let d = 0; d < 7; d++) {
-      const fuel = weekData.days[d].fuel;
+      const fuel = weekHasFuel ? (weekData.days[d].fuel || '1/2') : 'N/A';
       const km = weekData.days[d].km;
       if (km !== null && fuel) {
         const textWidth = helveticaBold.widthOfTextAtSize(fuel, 7.5);
-        page1.drawText(fuel, { x: 320 + d * 40.5 - (textWidth / 2), y: 608, size: 7.5, font: helveticaBold });
+        const drawX = fuelCenters[d] - (textWidth / 2);
+        page1.drawText(fuel, { x: drawX, y: 608, size: 7.5, font: helveticaBold });
       }
     }
     
@@ -1291,62 +1395,44 @@ async function generatePdfForWeek(weekData) {
     }
     
     // --- Page 1 Novedades / Observaciones al pie ---
-    const allObs = weekData.days
-      .filter(d => d.observaciones)
-      .map(d => `${DAYS_NAMES[weekData.days.indexOf(d)].substring(0,3).toUpperCase()}: ${d.observaciones}`)
-      .join(' | ');
-      
-    if (allObs) {
-      page1.drawText(allObs.substring(0, 140), { x: 105, y: 112, size: 7.5, font: helveticaFont });
+    const uniqueObs = [...new Set(weekData.days
+      .map(d => d.observaciones?.trim())
+      .filter(obs => obs && obs.toLowerCase() !== 'sin observaciones' && obs.toLowerCase() !== 'ninguna novedad relevante...')
+    )];
+    
+    if (uniqueObs.length > 0) {
+      page1.drawText('Ver observaciones detalladas al reverso (Página 2).', { x: 105, y: 112, size: 8, font: helveticaBold });
     } else {
       page1.drawText('Ninguna novedad relevante.', { x: 105, y: 112, size: 7.5, font: helveticaFont });
     }
     
-    // --- Page 2: Detailed Observations Table (shifted to top of box Y=580 to Y=740) ---
-    // Draw outer box
-    page2.drawRectangle({
-      x: 35,
-      y: 580,
-      width: 542,
-      height: 160,
-      borderColor: rgb(0, 0, 0),
-      borderWidth: 1
-    });
+    // --- Page 2: Simplified Borderless Observations List with Multi-line Wrapping & Dates ---
+    let currentY = 725;
+    const maxWidth = 440; // X=105 to X=545
+    const fontSize = 7.5;
+    const dayFontSize = 6.5;
+    const dateFontSize = 6.0;
+    const lineHeight = 9.5;
+    const DISPLAY_DAYS_NAMES = ["LUNES", "MARTES", "MIERCOL.", "JUEVES", "VIERNES", "SÁBADO", "DOMINGO"];
     
-    // Horizontal separator lines
-    page2.drawLine({ start: { x: 35, y: 720 }, end: { x: 577, y: 720 }, thickness: 1, color: rgb(0, 0, 0) });
-    for (let idx = 0; idx < 7; idx++) {
-      page2.drawLine({ start: { x: 35, y: 720 - (idx+1)*20 }, end: { x: 577, y: 720 - (idx+1)*20 }, thickness: 0.5, color: rgb(0, 0, 0) });
-    }
-    
-    // Vertical separator lines
-    page2.drawLine({ start: { x: 80, y: 580 }, end: { x: 80, y: 740 }, thickness: 1, color: rgb(0, 0, 0) });
-    page2.drawLine({ start: { x: 150, y: 580 }, end: { x: 150, y: 740 }, thickness: 1, color: rgb(0, 0, 0) });
-    page2.drawLine({ start: { x: 220, y: 580 }, end: { x: 220, y: 740 }, thickness: 1, color: rgb(0, 0, 0) });
-    
-    // Column text headers
-    page2.drawText('DÍA', { x: 45, y: 727, size: 7.5, font: helveticaBold });
-    page2.drawText('KILOMETRAJE', { x: 88, y: 727, size: 7.5, font: helveticaBold });
-    page2.drawText('COMBUSTIBLE', { x: 155, y: 727, size: 7.5, font: helveticaBold });
-    page2.drawText('NOVEDADES / OBSERVACIONES', { x: 230, y: 727, size: 7.5, font: helveticaBold });
-    
-    // Populate row values
     for (let idx = 0; idx < 7; idx++) {
       const day = weekData.days[idx];
-      const yPos = 720 - idx * 20 - 13;
+      const dayLabel = DISPLAY_DAYS_NAMES[idx];
+      const dayDateStr = formatDateShort(dates[idx]);
       
-      page2.drawText(DAYS_NAMES[idx].toUpperCase(), { x: 40, y: yPos, size: 7, font: helveticaBold });
-      
-      if (day.km !== null) {
-        page2.drawText(`${day.km} Km`, { x: 88, y: yPos, size: 7, font: helveticaFont });
-        page2.drawText(day.fuel || '1/2', { x: 175, y: yPos, size: 7, font: helveticaFont });
-      } else {
-        page2.drawText('No registrado', { x: 88, y: yPos, size: 7, font: helveticaFont, color: rgb(0.5,0.5,0.5) });
-        page2.drawText('No registrado', { x: 155, y: yPos, size: 7, font: helveticaFont, color: rgb(0.5,0.5,0.5) });
-      }
+      // Draw Day Name (e.g. LUNES, MIERCOL.)
+      page2.drawText(dayLabel, { x: 35, y: currentY, size: dayFontSize, font: helveticaBold });
+      // Draw Date underneath in dd/mm/yyyy format
+      page2.drawText(dayDateStr, { x: 35, y: currentY - 8.0, size: dateFontSize, font: helveticaFont });
       
       const obsText = day.observaciones || 'Sin observaciones';
-      page2.drawText(obsText.substring(0, 95), { x: 230, y: yPos, size: 7, font: helveticaFont });
+      const lines = wrapText(obsText, helveticaFont, fontSize, maxWidth);
+      
+      lines.forEach((line, lineIdx) => {
+        page2.drawText(line, { x: 105, y: currentY - lineIdx * lineHeight, size: fontSize, font: helveticaFont });
+      });
+      
+      currentY -= Math.max(lines.length * lineHeight + 4, 21);
     }
     
     // --- Page 2: Signatures Table ---
@@ -1377,16 +1463,37 @@ async function generatePdfForWeek(weekData) {
         const dateX = sigCenters[d] - (dateWidth / 2);
         page2.drawText(dateStr, { x: dateX, y: 255.5, size: dateSize, font: helveticaFont });
         
-        // Operator Name text wrapped dynamically and scaled down for SAB/DOM (size 5.0)
+        // Operator Name text: if 1-2 words, centered; if 3-4 words (2 names and/or 2 surnames), split into up to 4 lines
         if (activeOpName) {
-          const nameSize = (d >= 5) ? 5.0 : 6.0;
-          const maxW = cellWidths[d];
-          const nameLines = wrapText(activeOpName, helveticaFont, nameSize, maxW);
-          const startY = 226 - ((3 - nameLines.length) * 3);
+          const maxW = cellWidths[d] - 2;
+          const words = activeOpName.split(/\s+/).filter(Boolean);
+          let nameLines = [];
+          let nameSize = 5.5;
+
+          if (words.length <= 2) {
+            nameSize = (d >= 5) ? 6.0 : 7.0;
+            const singleLineW = helveticaFont.widthOfTextAtSize(activeOpName, nameSize);
+            if (singleLineW <= maxW) {
+              nameLines = [activeOpName];
+            } else {
+              nameLines = words;
+            }
+          } else {
+            // 3 or 4 words (e.g. 2 names + 2 surnames) -> split into separate lines
+            nameSize = (d >= 5) ? 5.0 : 5.8;
+            const line4 = words.slice(3).join(' ');
+            nameLines = [words[0], words[1], words[2], line4].filter(Boolean);
+          }
+
+          const stepY = nameSize + 1.2;
+          const cellCenterY = 221.0;
+          const totalHeight = (nameLines.length - 1) * stepY;
+          const startY = cellCenterY + (totalHeight / 2);
+
           nameLines.forEach((line, lineIdx) => {
             const lineWidth = helveticaFont.widthOfTextAtSize(line, nameSize);
             const lineX = sigCenters[d] - (lineWidth / 2);
-            page2.drawText(line, { x: lineX, y: startY - lineIdx * 7.5, size: nameSize, font: helveticaFont });
+            page2.drawText(line, { x: lineX, y: startY - lineIdx * stepY, size: nameSize, font: helveticaFont });
           });
         }
         

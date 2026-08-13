@@ -59,7 +59,14 @@
             </div>
             <div class="form-group flex-1">
               <label for="meta-placa">Placa</label>
-              <input type="text" id="meta-placa" class="form-control uppercase" placeholder="ABC-123" maxlength="7">
+              <input type="text" id="meta-placa" class="form-control uppercase" placeholder="ABC123" maxlength="6">
+            </div>
+            <div class="form-group flex-1">
+              <label for="meta-tipo">Tipo</label>
+              <select id="meta-tipo" class="form-control">
+                <option value="Moto" selected>Moto</option>
+                <option value="Motocarga">Motocarga</option>
+              </select>
             </div>
           </div>
           
@@ -76,10 +83,11 @@
               <input type="text" id="meta-area" class="form-control" placeholder="Ej. Distribución, Ventas">
             </div>
             <div class="form-group flex-1">
-              <label>Nivel Gasolina</label>
-              <div id="meta-fuel-indicator-display" style="background-color: var(--input-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 11px 12px; font-weight: 700; text-align: center; color: var(--accent-color); font-size: 13px; height: 42px; display: flex; align-items: center; justify-content: center;">
-                SÍ (Tiene)
-              </div>
+              <label for="meta-has-fuel">Nivel Gasolina</label>
+              <select id="meta-has-fuel" class="form-control">
+                <option value="1" selected>SÍ (Tiene)</option>
+                <option value="0">NO (N/A)</option>
+              </select>
             </div>
           </div>
           
@@ -256,7 +264,14 @@
           <div class="form-row">
             <div class="form-group flex-1">
               <label for="preset-placa">Placa</label>
-              <input type="text" id="preset-placa" class="form-control uppercase" placeholder="ABC-123" maxlength="7">
+              <input type="text" id="preset-placa" class="form-control uppercase" placeholder="ABC123" maxlength="6">
+            </div>
+            <div class="form-group flex-1">
+              <label for="preset-tipo">Tipo</label>
+              <select id="preset-tipo" class="form-control">
+                <option value="Moto" selected>Moto</option>
+                <option value="Motocarga">Motocarga</option>
+              </select>
             </div>
             <div class="form-group flex-1">
               <label for="preset-zona">Zona</label>

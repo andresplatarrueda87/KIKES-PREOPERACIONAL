@@ -887,3 +887,23 @@ textarea.form-control {
 .pdf-legal-list li {
   margin-bottom: 2px;
 }
+
+/* Disabled motocarga items */
+.checklist-item.disabled-motocarga {
+  opacity: 0.45;
+  background-color: rgba(255, 255, 255, 0.02);
+}
+
+.checklist-item.disabled-motocarga .toggle-btn {
+  opacity: 0.35;
+  cursor: not-allowed !important;
+  pointer-events: none;
+}
+
+.na-tag {
+  font-size: 11px;
+  color: var(--color-secondary);
+  font-style: italic;
+  margin-left: 6px;
+  font-weight: 500;
+}
