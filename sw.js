@@ -1,10 +1,11 @@
-const CACHE_NAME = 'kikes-preop-v58';
+const CACHE_NAME = 'kikes-preop-v59';
 const ASSETS = [
   './',
   './index.html',
   './style.css',
   './app.js',
   './manifest.json',
+  './app_icon.png',
   './app_icon_192.png',
   './app_icon_512.png',
   './Kikes_logo.png',
