@@ -683,7 +683,9 @@ function setupFormChangeHandlers() {
 
   document.getElementById('meta-placa').addEventListener('input', (e) => {
     e.target.value = e.target.value.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-    loadActiveWeekData();
+    if (!STATE.activeWeekData || STATE.activeWeekData.placa !== e.target.value) {
+      loadActiveWeekData();
+    }
   });
   document.getElementById('meta-tipo').addEventListener('change', () => {
     if (STATE.activeWeekData) {
@@ -805,19 +807,27 @@ function setupFormChangeHandlers() {
   
   // "Guardar Progreso de la Semana"
   document.getElementById('btn-save-week').addEventListener('click', async () => {
-    const placa = document.getElementById('meta-placa').value.trim();
+    const placa = document.getElementById('meta-placa').value.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
     if (!placa) {
       showToast("Debe ingresar la placa del vehículo para guardar el progreso", "warning", 2000);
       return;
     }
 
-    await loadActiveWeekData();
+    if (!STATE.activeWeekData || STATE.activeWeekData.placa !== placa) {
+      await loadActiveWeekData();
+    }
+    
     if (!STATE.activeWeekData) {
       showToast("No se pudo inicializar la semana activa", "error", 2000);
       return;
     }
     
+    // Save current active day inputs FIRST before anything else!
     saveCurrentActiveDayToState();
+
+    STATE.activeWeekData.placa = placa;
+    STATE.activeWeekData.zona = document.getElementById('meta-zona').value;
+    STATE.activeWeekData.area = document.getElementById('meta-area').value.trim();
     STATE.activeWeekData.tipo = document.getElementById('meta-tipo').value;
     STATE.activeWeekData.hasFuelIndicator = (document.getElementById('meta-has-fuel').value === '1');
     
@@ -850,14 +860,17 @@ function setupFormChangeHandlers() {
 
   // "Generar PDF" (Main button)
   document.getElementById('btn-generate-pdf-main').addEventListener('click', async () => {
-    const placa = document.getElementById('meta-placa').value.trim();
+    const placa = document.getElementById('meta-placa').value.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
     if (!placa) {
-      showToast("Debe ingresar la placa del vehículo para generar el PDF", "warning", 1800);
+      showToast("Debe ingresar la placa del vehículo para generar el PDF", "warning", 2000);
       return;
     }
-    await loadActiveWeekData();
+    if (!STATE.activeWeekData || STATE.activeWeekData.placa !== placa) {
+      await loadActiveWeekData();
+    }
     saveCurrentActiveDayToState();
     if (STATE.activeWeekData) {
+      STATE.activeWeekData.placa = placa;
       STATE.activeWeekData.tipo = document.getElementById('meta-tipo').value;
       STATE.activeWeekData.hasFuelIndicator = (document.getElementById('meta-has-fuel').value === '1');
       await db.weeks.put(STATE.activeWeekData);
@@ -865,16 +878,19 @@ function setupFormChangeHandlers() {
     }
   });
 
-  // "Enviar por Correo" (Main button)
+  // "Enviar Correo" (Main button)
   document.getElementById('btn-send-email-main').addEventListener('click', async () => {
-    const placa = document.getElementById('meta-placa').value.trim();
+    const placa = document.getElementById('meta-placa').value.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
     if (!placa) {
-      showToast("Debe ingresar la placa del vehículo para enviar por correo", "warning", 1800);
+      showToast("Debe ingresar la placa del vehículo para enviar por correo", "warning", 2000);
       return;
     }
-    await loadActiveWeekData();
+    if (!STATE.activeWeekData || STATE.activeWeekData.placa !== placa) {
+      await loadActiveWeekData();
+    }
     saveCurrentActiveDayToState();
     if (STATE.activeWeekData) {
+      STATE.activeWeekData.placa = placa;
       STATE.activeWeekData.tipo = document.getElementById('meta-tipo').value;
       STATE.activeWeekData.hasFuelIndicator = (document.getElementById('meta-has-fuel').value === '1');
       await db.weeks.put(STATE.activeWeekData);
