@@ -415,6 +415,22 @@ async function loadActiveWeekData() {
   updatePrevKmButtonContainer();
 }
 
+function applyKmCascadeValidation(weekData) {
+  if (!weekData || !weekData.days) return;
+  
+  let currentMinKm = null;
+  for (let i = 0; i < 7; i++) {
+    const day = weekData.days[i];
+    if (day.km !== null && !isNaN(day.km)) {
+      if (currentMinKm !== null && day.km < currentMinKm) {
+        day.km = currentMinKm;
+      } else {
+        currentMinKm = day.km;
+      }
+    }
+  }
+}
+
 function saveCurrentActiveDayToState() {
   if (!STATE.activeWeekData) return;
   
@@ -423,6 +439,9 @@ function saveCurrentActiveDayToState() {
   // Save Kilometraje
   const kmInput = document.getElementById('day-km').value;
   dayData.km = kmInput ? parseFloat(kmInput) : null;
+  
+  // Apply cascading mileage validation for subsequent days
+  applyKmCascadeValidation(STATE.activeWeekData);
   
   // Save Fuel Level
   const activeFuelBtn = document.querySelector('.fuel-btn.active');
@@ -663,7 +682,13 @@ function setupFormChangeHandlers() {
     if (prevKm) {
       document.getElementById('day-km').value = prevKm;
       STATE.activeWeekData.days[STATE.activeDayIndex].km = parseFloat(prevKm);
+      applyKmCascadeValidation(STATE.activeWeekData);
     }
+  });
+
+  // Day Km input live cascade listener
+  document.getElementById('day-km').addEventListener('input', () => {
+    saveCurrentActiveDayToState();
   });
   
   // "Llenar Día como Conforme"
